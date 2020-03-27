@@ -53,11 +53,17 @@ netty的三层网络架构，包括：
 
 无论是在服务器端还是在客户端，netty都会涉及到它包含的一些关键性的组件，包括：
 
+<a href="#Channel">Channel：</a>
 
 
 
 
-### <a name="channel">Channel</a>
+
+
+
+
+
+### Channel
 
 channel是通信双方进行数据交换的通道，根据 **交换数据的协议和特性** 不同，当然就不能只有一种channel，netty支持的channel种类有：
 
@@ -996,12 +1002,6 @@ EventLoop实际上是一个 **“多面手”**，它主要有两种职能，一
 <img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/image-20200325010553258.png" alt="image-20200325010553258" style="zoom:50%;" />
 
 
-
-
-
-
-
-<a href="#channel">Channel</a>
 
 
 
