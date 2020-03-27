@@ -211,6 +211,133 @@ TCP/IP 协议两种核心的channel，分别是 ```SocketChannel``` 和 ```Serve
 
 #### register
 
+把Channel注册到EventLoopGroup上面，主要操作是由AbstractChannel.AbstractUnsafe来完成的
+
+![landray_corpcost_flow](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/landray_corpcost_flow.png)
+
+
+
+```AbstractChannel.AbstractUnsafe``` 类中的关键方法
+
+```java
+@Override
+public final void register(EventLoop eventLoop, final ChannelPromise promise) {
+    if (eventLoop == null) {
+        throw new NullPointerException("eventLoop");
+    }
+  	// AbstractChannel有一个属性 registered ，已经把Channel注册到一个EventLoopGroup 就不能重复注册或者注册到另外一个EventLoopGroup了
+    if (isRegistered()) {
+        promise.setFailure(new IllegalStateException("registered to an event loop already"));
+        return;
+    }
+  	// 检查兼容性❓
+    if (!isCompatible(eventLoop)) {
+        promise.setFailure(
+                new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
+        return;
+    }
+		
+  	// 把注册的EventLoop实例关联到AbstractChannel对象
+    AbstractChannel.this.eventLoop = eventLoop;
+
+  	// 这个方法可能是EventLoop线程调用，也可能其他线程调用，如果其他线程调用的话，可能出现多线程并发调用，可能产生并发问题，所以，如果外部线程调用这个方法，就转换成一个task交给EventLoop线程运行，避免多线程并发问题
+    if (eventLoop.inEventLoop()) {
+        register0(promise);
+    } else {
+        try {
+            eventLoop.execute(new Runnable() {
+                @Override
+                public void run() {
+                    register0(promise);
+                }
+            });
+        } catch (Throwable t) {
+            logger.warn(
+                    "Force-closing a channel whose registration task was not accepted by an event loop: {}",
+                    AbstractChannel.this, t);
+            closeForcibly();
+            closeFuture.setClosed();
+            safeSetFailure(promise, t);
+        }
+    }
+}
+
+
+private void register0(ChannelPromise promise) {
+    try {
+        // check if the channel is still open as it could be closed in the mean time when the register
+        // call was outside of the eventLoop
+      	// 如果Channel已经close了，是不能进行注册操作的
+        if (!promise.setUncancellable() || !ensureOpen(promise)) {
+            return;
+        }
+      
+      	// neverRegistered 在AbstractChannel中 默认为false
+        boolean firstRegistration = neverRegistered;
+      
+      	// 这是 AbstractChannel 模板类中的抽象方法，具体逻辑由子类实现
+        doRegister();
+      
+      	// 更新Channel注册状态
+        neverRegistered = false;
+        registered = true;
+
+        // 没看懂❓
+        pipeline.invokeHandlerAddedIfNeeded();
+
+        safeSetSuccess(promise);
+        pipeline.fireChannelRegistered();
+        // 对于服务器端来说，active意味着已经bind成功，对于客户端来说 active意味着已经connected
+        if (isActive()) {
+            if (firstRegistration) {
+              	// Channel可以多次进行de-register操作再register，但是Channel的状态只有一次从inActive -> Active，这里是为了保证 ChannelActive 事件只触发一次
+                pipeline.fireChannelActive();
+            } else if (config().isAutoRead()) {
+                // 没看懂❓
+                // See https://github.com/netty/netty/issues/4805
+                beginRead();
+            }
+        }
+    } catch (Throwable t) {
+        // Close the channel directly to avoid FD leak.
+        closeForcibly();
+        closeFuture.setClosed();
+        safeSetFailure(promise, t);
+    }
+}
+```
+
+
+
+针对于服务器端，可以看看 ```AbstractChannel``` 的子类 ```AbstractNioChannel``` 的具体实现（ ```NioServerSocketChannel``` 就继承了 ```AbstractNioChannel```）
+
+```java
+@Override
+protected void doRegister() throws Exception {
+    boolean selected = false;
+    for (;;) {
+        try {
+          	// 这里把Channel注册到eventloop中的selector上，第三个参数为0表示，暂时没有监听任何事件
+          	// 可以之后对Channel的 interestOps 进行更改，这里仅仅是注册
+            selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
+            return;
+        } catch (CancelledKeyException e) {
+            if (!selected) {
+              	// 如果在执行注册的时候出现这个异常，说明这个Channel之前被de-register过，由于de-register操作不会自动把socket从selector上移除，直到运行 selector.select 方法，如果EventLoop循环还没来得及运行到 selector.select ，这里就代它执行 selector.select
+                eventLoop().selectNow();
+                selected = true;
+            } else {
+                // We forced a select operation on the selector before but the SelectionKey is still cached
+                // for whatever reason. JDK bug ?
+                throw e;
+            }
+        }
+    }
+}
+```
+
+
+
 
 
 
@@ -237,7 +364,88 @@ TCP/IP 协议两种核心的channel，分别是 ```SocketChannel``` 和 ```Serve
 
 
 
-这些事件都是Pipeline被动触发的，得有一个线程去实际上fire这些uijm
+这些事件都是Pipeline被动触发的，得有一个线程去实际上fire这些事件
+
+```java
+@Override
+ChannelPipeline fireChannelRegistered();
+
+ @Override
+ChannelPipeline fireChannelUnregistered();
+
+@Override
+ChannelPipeline fireChannelActive();
+
+@Override
+ChannelPipeline fireChannelInactive();
+
+@Override
+ChannelPipeline fireExceptionCaught(Throwable cause);
+
+@Override
+ChannelPipeline fireUserEventTriggered(Object event);
+
+@Override
+ChannelPipeline fireChannelRead(Object msg);
+
+@Override
+ChannelPipeline fireChannelReadComplete();
+
+@Override
+ChannelPipeline fireChannelWritabilityChanged();
+```
+
+
+
+
+
+### ChannelHander、ChannelHandlerContext
+
+
+
+
+
+#### ChannelInitializer
+
+
+
+```java
+// 服务器端
+ServerBootstrap b = new ServerBootstrap();
+b.group(bossGroup, workerGroup)
+        .channel(NioServerSocketChannel.class)
+        .handler(new SimpleServerHandler())
+  			// 设置 I/O Channel关联的Pipeline中的 Handler
+        .childHandler(new ChannelInitializer<SocketChannel>() {
+            @Override
+            public void initChannel(SocketChannel ch) throws Exception {
+            }
+        });
+
+// 客户端
+Bootstrap bootstrap = new Bootstrap();
+bootstrap.group(group)
+        .channel(NioSocketChannel.class)
+        .option(ChannelOption.TCP_NODELAY, true)
+  			// 设置客户端 Channel关联的Pipeline中的 Handler
+        .handler(new ChannelInitializer<NioSocketChannel>() {
+            protected void initChannel(NioSocketChannel ch) throws Exception {
+                ch.pipeline().addLast(new ChildHandler());
+            }
+        });
+```
+
+
+
+在服务器端和客户端经常会用到的这个类是一个ChannelHandler
+
+<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/ChannelInitializer.png" alt="ChannelInitializer" style="zoom:40%;float:left" />
+
+那它肯定在一个时机会被添加到Pipeline当中，重要的 ```initChannel``` 方法实际上是发生了两种事件的时候会被调用，一个是 
+
+
+
+
 
 
 
