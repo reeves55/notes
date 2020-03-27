@@ -201,7 +201,9 @@ TCP/IP 协议两种核心的channel，分别是 ```SocketChannel``` 和 ```Serve
 
 
 
-#### 如何使用
+
+
+
 
 
 
@@ -286,6 +288,7 @@ private void register0(ChannelPromise promise) {
         pipeline.invokeHandlerAddedIfNeeded();
 
         safeSetSuccess(promise);
+      	// 触发 ChannelRegistered 事件
         pipeline.fireChannelRegistered();
         // 对于服务器端来说，active意味着已经bind成功，对于客户端来说 active意味着已经connected
         if (isActive()) {
@@ -397,9 +400,69 @@ ChannelPipeline fireChannelWritabilityChanged();
 
 
 
+#### addXXX
+
+包括 addFirst、addLast、addBefore、addAfter 这几个方法，本质上都是一样的，只不过向ChannelHandlerContext链表插入元素的位置不同而已，步骤如下：
+
+```java
+@Override
+public final ChannelPipeline addXXX(EventExecutorGroup group, String name, ChannelHandler handler) {
+    final AbstractChannelHandlerContext newCtx;
+  	// 普通链表操作，可能出现多线程并发问题，所以加锁
+    synchronized (this) {
+      	// 如果handler不是 @Sharable的，这个handler不支持被多次添加到ChannelPipeline中
+        checkMultiplicity(handler);
+      	// 如果name==null则会自动生成一个name，name不允许和已有handler name重复
+      	// 平时我们直接调用 addXXX(handler) ，这个时候name默认是null
+        name = filterName(name, handler);
+				
+      	// new DefaultChannelHandlerContext 来封装这个 handler
+        newCtx = newContext(group, name, handler);
+
+      	// 把 ChannelHandlerContext 添加到 Pipeline
+        addXXX0(newCtx);
+
+        // If the registered is false it means that the channel was not registered on an eventloop yet.
+        // In this case we add the context to the pipeline and add a task that will call
+        // ChannelHandler.handlerAdded(...) once the channel is registered.
+      	// registered表示当前Pipeline是否已经被Channel注册，一旦注册，registered=true，且不会改变
+        if (!registered) {
+            newCtx.setAddPending();
+          	// 等到Pipeline被注册之后，再触发当前Handler的handlerAdded事件
+            callHandlerCallbackLater(newCtx, true);
+            return this;
+        }
+
+        EventExecutor executor = newCtx.executor();
+        if (!executor.inEventLoop()) {
+            newCtx.setAddPending();
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    callHandlerAdded0(newCtx);
+                }
+            });
+            return this;
+        }
+    }
+    callHandlerAdded0(newCtx);
+    return this;
+}
+```
 
 
-### ChannelHander、ChannelHandlerContext
+
+
+
+###ChannelHandler
+
+ChannelHandler是事件处理器，用于接收Pipeline中传播的事件并处理，但ChannelHandler并不是直接包含于Pipeline中，而是封装成ChannelHandlerContext对象，多个ChannelHandlerContext组成一个双向链表包含于Pipeline中。
+
+
+
+####生命周期
+
+<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/temp.png" alt="temp" style="zoom:50%;" />
 
 
 
@@ -441,7 +504,56 @@ bootstrap.group(group)
 
 <img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/ChannelInitializer.png" alt="ChannelInitializer" style="zoom:40%;float:left" />
 
-那它肯定在一个时机会被添加到Pipeline当中，重要的 ```initChannel``` 方法实际上是发生了两种事件的时候会被调用，一个是 
+那它肯定在一个时机会被添加到Pipeline当中，重要的 ```initChannel``` 方法实际上是发生了两种事件的时候会被调用，一个是 ```handlerAdded``` ，另一个是 ```channelRegistered``` ，但是
+
+```java
+private boolean initChannel(ChannelHandlerContext ctx) throws Exception {
+    if (initMap.putIfAbsent(ctx, Boolean.TRUE) == null) { // Guard against re-entrance.
+        try {
+          	// 这里调用的方法就是我们经常重写的 initChannel 方法
+            initChannel((C) ctx.channel());
+        } catch (Throwable cause) {
+            // Explicitly call exceptionCaught(...) as we removed the handler before calling initChannel(...).
+            // We do so to prevent multiple calls to initChannel(...).
+            exceptionCaught(ctx, cause);
+        } finally {
+          	// 当前这个ChannelHandler在init之后就从Pipeline中移除了
+            remove(ctx);
+        }
+        return true;
+    }
+    return false;
+}
+
+// 触发initChannel的事件
+// handlerAdded：当一个ChannelHandler被成功添加到Pipeline，准备好处理事件时
+@Override
+public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+    if (ctx.channel().isRegistered()) {
+        // This should always be true with our current DefaultChannelPipeline implementation.
+        // The good thing about calling initChannel(...) in handlerAdded(...) is that there will be no ordering
+        // surprises if a ChannelInitializer will add another ChannelInitializer. This is as all handlers
+        // will be added in the expected order.
+        initChannel(ctx);
+    }
+}
+
+// 触发initChannel的事件
+public final void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+    // Normally this method will never be called as handlerAdded(...) should call initChannel(...) and remove
+    // the handler.
+    if (initChannel(ctx)) {
+        // we called initChannel(...) so we need to call now pipeline.fireChannelRegistered() to ensure we not
+        // miss an event.
+        ctx.pipeline().fireChannelRegistered();
+    } else {
+        // Called initChannel(...) before which is the expected behavior, so just forward the event.
+        ctx.fireChannelRegistered();
+    }
+}
+```
+
+
 
 
 
