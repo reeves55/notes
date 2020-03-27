@@ -639,6 +639,44 @@ protected void doBeginRead() throws Exception {
 
 
 
+#### write
+
+Unsafe的write方法实际上只是把要发送的消息对象添加到 Channel 中的 ```ChannelOutboundBuffer outboundBuffer``` 中去，```ChannelOutboundBuffer``` 内部保存了一个 ```Entry``` 节点组成的单链表，每个节点保存着每次调用write方法传进来的msg对象，
+
+```java
+@Override
+public final void write(Object msg, ChannelPromise promise) {
+    assertEventLoop();
+
+    ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
+    if (outboundBuffer == null) {
+        // If the outboundBuffer is null we know the channel was closed and so
+        // need to fail the future right away. If it is not null the handling of the rest
+        // will be done in flush0()
+        // See https://github.com/netty/netty/issues/2362
+        safeSetFailure(promise, WRITE_CLOSED_CHANNEL_EXCEPTION);
+        // release message now to prevent resource-leak
+        ReferenceCountUtil.release(msg);
+        return;
+    }
+
+    int size;
+    try {
+        msg = filterOutboundMessage(msg);
+        size = pipeline.estimatorHandle().size(msg);
+        if (size < 0) {
+            size = 0;
+        }
+    } catch (Throwable t) {
+        safeSetFailure(promise, t);
+        ReferenceCountUtil.release(msg);
+        return;
+    }
+
+    outboundBuffer.addMessage(msg, size, promise);
+}
+```
+
 
 
 
