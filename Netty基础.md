@@ -213,9 +213,9 @@ TCP/IP 协议两种核心的channel，分别是 ```SocketChannel``` 和 ```Serve
 
 #### register
 
-把Channel注册到EventLoopGroup上面，主要操作是由AbstractChannel.AbstractUnsafe来完成的
+把Channel注册到EventLoopGroup上面，主要操作是由 ```AbstractChannel.AbstractUnsafe``` 来完成的
 
-![landray_corpcost_flow](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/landray_corpcost_flow.png)
+![Channel$Unsafe.register](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/Channel$Unsafe.register.png)
 
 
 
@@ -234,8 +234,7 @@ public final void register(EventLoop eventLoop, final ChannelPromise promise) {
     }
   	// 检查兼容性❓
     if (!isCompatible(eventLoop)) {
-        promise.setFailure(
-                new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
+        promise.setFailure(new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
         return;
     }
 		
@@ -267,14 +266,13 @@ public final void register(EventLoop eventLoop, final ChannelPromise promise) {
 
 private void register0(ChannelPromise promise) {
     try {
-        // check if the channel is still open as it could be closed in the mean time when the register
-        // call was outside of the eventLoop
+        // check if the channel is still open as it could be closed in the mean time when the register call was outside of the eventLoop
       	// 如果Channel已经close了，是不能进行注册操作的
         if (!promise.setUncancellable() || !ensureOpen(promise)) {
             return;
         }
       
-      	// neverRegistered 在AbstractChannel中 默认为false
+      	// neverRegistered 在 AbstractChannel中 默认为false
         boolean firstRegistration = neverRegistered;
       
       	// 这是 AbstractChannel 模板类中的抽象方法，具体逻辑由子类实现
@@ -284,11 +282,11 @@ private void register0(ChannelPromise promise) {
         neverRegistered = false;
         registered = true;
 
-        // 没看懂❓
+        // Pipeline中的 handlerAdded 事件只有在 Channel注册到Eventloop上之后才能触发，这里完成了注册操作，就应该通知 Pipeline了
         pipeline.invokeHandlerAddedIfNeeded();
 
         safeSetSuccess(promise);
-      	// 触发 ChannelRegistered 事件
+      	// 触发 Pipeline中的 ChannelRegistered 事件
         pipeline.fireChannelRegistered();
         // 对于服务器端来说，active意味着已经bind成功，对于客户端来说 active意味着已经connected
         if (isActive()) {
@@ -338,6 +336,318 @@ protected void doRegister() throws Exception {
     }
 }
 ```
+
+
+
+#### deregister
+
+
+
+
+
+#### bind
+
+bind操作把Channel绑定到指定IP地址和端口
+
+```java
+@Override
+public final void bind(final SocketAddress localAddress, final ChannelPromise promise) {
+    assertEventLoop();
+		
+  	// 还是要保证进行bind操作的Channel没有close
+    if (!promise.setUncancellable() || !ensureOpen(promise)) {
+        return;
+    }
+
+    // See: https://github.com/netty/netty/issues/576
+    if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
+        localAddress instanceof InetSocketAddress &&
+        !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
+        !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
+        // Warn a user about the fact that a non-root user can't receive a
+        // broadcast packet on *nix if the socket is bound on non-wildcard address.
+        logger.warn(
+                "A non-root user can't receive a broadcast packet if the socket " +
+                "is not bound to a wildcard address; binding to a non-wildcard " +
+                "address (" + localAddress + ") anyway as requested.");
+    }
+
+    boolean wasActive = isActive();
+    try {
+      	// 这是模板类当中的抽象方法，具体操作由子类实现
+        doBind(localAddress);
+    } catch (Throwable t) {
+        safeSetFailure(promise, t);
+        closeIfClosed();
+        return;
+    }
+
+  	// 只有 Channel 状态从 inActive -> Active 才需要触发Pipeline中 ChannelActive 事件
+  	// bind成功，就代表了Channel处于 Active 状态
+    if (!wasActive && isActive()) {
+        invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                pipeline.fireChannelActive();
+            }
+        });
+    }
+
+    safeSetSuccess(promise);
+}
+```
+
+
+
+```NioServerSocketChannel``` 对 ```doBind``` 方法的实现
+
+```java
+@Override
+protected void doBind(SocketAddress localAddress) throws Exception {
+    if (PlatformDependent.javaVersion() >= 7) {
+        javaChannel().bind(localAddress, config.getBacklog());
+    } else {
+        javaChannel().socket().bind(localAddress, config.getBacklog());
+    }
+}
+```
+
+
+
+#### connect
+
+connect操作从客户端发起，连接到服务器端，可以设置连接的超时时间
+
+```AbstractNioChannel.Unsafe```
+
+```java
+@Override
+public final void connect(
+        final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise promise) {
+  	// 首先还是要确保Channel没有close
+    if (!promise.setUncancellable() || !ensureOpen(promise)) {
+        return;
+    }
+
+    try {
+      	// connectPromise是当前Channel connect操作的future对象，如果connectPromise不为null，说明连接正在进行中，不允许重复尝试connect
+        if (connectPromise != null) {
+            // Already a connect in process.
+            throw new ConnectionPendingException();
+        }
+
+        boolean wasActive = isActive();
+      	// doConnect方法是模板类中的抽象方法，由具体子类实现
+        if (doConnect(remoteAddress, localAddress)) {
+            fulfillConnectPromise(promise, wasActive);
+        } else {
+          	// 连接没有立即成功
+            connectPromise = promise;
+            requestedRemoteAddress = remoteAddress;
+
+            // Schedule connect timeout.
+            int connectTimeoutMillis = config().getConnectTimeoutMillis();
+            if (connectTimeoutMillis > 0) {
+              	// 交给EventLoop一个定时任务
+                connectTimeoutFuture = eventLoop().schedule(new Runnable() {
+                    @Override
+                    public void run() {
+                        ChannelPromise connectPromise = AbstractNioChannel.this.connectPromise;
+                        ConnectTimeoutException cause =
+                                new ConnectTimeoutException("connection timed out: " + remoteAddress);
+                      	// 到了定时器超时时间，发现连接失败
+                        if (connectPromise != null && connectPromise.tryFailure(cause)) {
+                            close(voidPromise());
+                        }
+                    }
+                }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
+            }
+
+            promise.addListener(new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) throws Exception {
+                    if (future.isCancelled()) {
+                        if (connectTimeoutFuture != null) {
+                            connectTimeoutFuture.cancel(false);
+                        }
+                        connectPromise = null;
+                        close(voidPromise());
+                    }
+                }
+            });
+        }
+    } catch (Throwable t) {
+        promise.tryFailure(annotateConnectException(t, remoteAddress));
+        closeIfClosed();
+    }
+}
+
+
+private void fulfillConnectPromise(ChannelPromise promise, boolean wasActive) {
+    if (promise == null) {
+        // Closed via cancellation and the promise has been notified already.
+        return;
+    }
+
+    // Get the state as trySuccess() may trigger an ChannelFutureListener that will close the Channel. We still need to ensure we call fireChannelActive() in this case.
+    boolean active = isActive();
+
+    // trySuccess() will return false if a user cancelled the connection attempt.
+    boolean promiseSet = promise.trySuccess();
+
+    // Regardless if the connection attempt was cancelled, channelActive() event should be triggered,because what happened is what happened.
+    if (!wasActive && active) {
+      	// 触发 pipeline 中的 ChannelActive 事件
+        pipeline().fireChannelActive();
+    }
+
+    // If a user cancelled the connection attempt, close the channel, which is followed by channelInactive().
+    if (!promiseSet) {
+        close(voidPromise());
+    }
+}
+```
+
+
+
+```NioSocketChannel.doConnect()``` 具体实现
+
+```java
+@Override
+protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
+    if (localAddress != null) {
+        doBind0(localAddress);
+    }
+
+    boolean success = false;
+    try {
+        boolean connected = SocketUtils.connect(javaChannel(), remoteAddress);
+        if (!connected) {
+            selectionKey().interestOps(SelectionKey.OP_CONNECT);
+        }
+        success = true;
+        return connected;
+    } finally {
+        if (!success) {
+            doClose();
+        }
+    }
+}
+
+
+private void doBind0(SocketAddress localAddress) throws Exception {
+    if (PlatformDependent.javaVersion() >= 7) {
+        SocketUtils.bind(javaChannel(), localAddress);
+    } else {
+        SocketUtils.bind(javaChannel().socket(), localAddress);
+    }
+}
+```
+
+
+
+#### disconnect
+
+客户端取消连接，看下AbstractChannel.AbstractUnsafe.disconnect()方法
+
+```java
+@Override
+public final void disconnect(final ChannelPromise promise) {
+    assertEventLoop();
+
+    if (!promise.setUncancellable()) {
+        return;
+    }
+
+    boolean wasActive = isActive();
+    try {
+        doDisconnect();
+    } catch (Throwable t) {
+        safeSetFailure(promise, t);
+        closeIfClosed();
+        return;
+    }
+
+  	// 当Channel连接状态从Active -> inActive时，触发pipeline中的 ChannelInactive事件
+    if (wasActive && !isActive()) {
+        invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                pipeline.fireChannelInactive();
+            }
+        });
+    }
+
+    safeSetSuccess(promise);
+    closeIfClosed(); // doDisconnect() might have closed the channel
+}
+```
+
+
+
+#### beginRead
+
+```AbstractChannel.AbstractUnsafe``` 的 ```beginRead``` 方法
+
+```java
+@Override
+public final void beginRead() {
+    assertEventLoop();
+
+    if (!isActive()) {
+        return;
+    }
+
+    try {
+      	// 这是模板类的抽象方法，具体操作由子类实现
+        doBeginRead();
+    } catch (final Exception e) {
+        invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                pipeline.fireExceptionCaught(e);
+            }
+        });
+        close(voidPromise());
+    }
+}
+```
+
+
+
+```AbstractNioChannel``` 的具体实现为：
+
+```java
+@Override
+protected void doBeginRead() throws Exception {
+    // Channel.read() or ChannelHandlerContext.read() was called
+    final SelectionKey selectionKey = this.selectionKey;
+    if (!selectionKey.isValid()) {
+        return;
+    }
+
+  	// 标识当前Channel正在读取当中
+    readPending = true;
+
+    final int interestOps = selectionKey.interestOps();
+    if ((interestOps & readInterestOp) == 0) {
+      	// 向selector注册 OP_READ 感兴趣事件
+        selectionKey.interestOps(interestOps | readInterestOp);
+    }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -426,6 +736,7 @@ public final ChannelPipeline addXXX(EventExecutorGroup group, String name, Chann
         // In this case we add the context to the pipeline and add a task that will call
         // ChannelHandler.handlerAdded(...) once the channel is registered.
       	// registered表示当前Pipeline是否已经被Channel注册，一旦注册，registered=true，且不会改变
+      	// 在 Channel.Unsafe.register 章节可以看到，一旦Channel注册到Eventloop，就会调用Pipeline的 invokeHandlerAddedIfNeeded() 方法
         if (!registered) {
             newCtx.setAddPending();
           	// 等到Pipeline被注册之后，再触发当前Handler的handlerAdded事件
@@ -447,6 +758,45 @@ public final ChannelPipeline addXXX(EventExecutorGroup group, String name, Chann
     }
     callHandlerAdded0(newCtx);
     return this;
+}
+```
+
+
+
+Channel一旦注册到EventLoop上，就会通过调用 ```invokeHandlerAddedIfNeeded()``` 方法来通知Pipeline
+
+```java
+final void invokeHandlerAddedIfNeeded() {
+    assert channel.eventLoop().inEventLoop();
+    if (firstRegistration) {
+        firstRegistration = false;
+        // We are now registered to the EventLoop. It's time to call the callbacks for the ChannelHandlers,
+        // that were added before the registration was done.
+        callHandlerAddedForAllHandlers();
+    }
+}
+
+private void callHandlerAddedForAllHandlers() {
+    final PendingHandlerCallback pendingHandlerCallbackHead;
+    synchronized (this) {
+        assert !registered;
+
+        // This Channel itself was registered.
+        registered = true;
+
+        pendingHandlerCallbackHead = this.pendingHandlerCallbackHead;
+        // Null out so it can be GC'ed.
+        this.pendingHandlerCallbackHead = null;
+    }
+
+    // This must happen outside of the synchronized(...) block as otherwise handlerAdded(...) may be called while
+    // holding the lock and so produce a deadlock if handlerAdded(...) will try to add another handler from outside
+    // the EventLoop.
+    PendingHandlerCallback task = pendingHandlerCallbackHead;
+    while (task != null) {
+        task.execute();
+        task = task.next;
+    }
 }
 ```
 
@@ -524,6 +874,7 @@ private boolean initChannel(ChannelHandlerContext ctx) throws Exception {
     }
     return false;
 }
+
 
 // 触发initChannel的事件
 // handlerAdded：当一个ChannelHandler被成功添加到Pipeline，准备好处理事件时
