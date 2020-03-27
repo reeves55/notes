@@ -205,6 +205,14 @@ TCP/IP 协议两种核心的channel，分别是 ```SocketChannel``` 和 ```Serve
 
 
 
+### Channel.Unsafe
+
+
+
+#### register
+
+
+
 
 
 ### ChannelPipeline
