@@ -10,6 +10,14 @@ Netty是一个网络框架，在一个分布式微服务框架中，netty的重�
 
 
 
+## 基础知识
+
+<a href="">Linux socket原理</a>
+
+<a href="">Java NIO</a>
+
+
+
 ## Netty线程模型
 
 首先，Java NIO 网络I/O事件有几种？
@@ -53,23 +61,25 @@ netty的三层网络架构，包括：
 
 无论是在服务器端还是在客户端，netty都会涉及到它包含的一些关键性的组件，包括：
 
-<a href="#Channel">Channel：</a>
+<a href="">Channel</a> ：故事的主角，所有的操作都是以Channel为中心或是源头来展开的，它就像一个故事的核心线索，在整个运作流程中都存在，故事的开始、发展，结束都和Channel紧密联系
 
+<a href="">Channel.Unsafe</a> ：实现了Channel相关的操作，如果要对Channel的状态进行改变，那就用Channel.Unsafe吧
 
+<a href="">Pipeline</a> ：就像是八卦群众对娱乐信息的消费一样，Pipeline是 “流言蜚语” 的传播地，这里汇集了一批 “好事者”，它们对某些话题非常敏感，一旦受到消息，就会做出反应
 
+<a href="">ChannelHandler</a> ：对，就是那个 “好事者” 🐶
 
-
-
+<a href="">EventLoopGroup & EventLoop</a> ：故事主角的消息需要一个 “爆料人”，它们跟踪Channel的状态，一旦有任何风吹草动，就会把消息透露给 Pipeline
 
 
 
 ### Channel
 
-channel是通信双方进行数据交换的通道，根据 **交换数据的协议和特性** 不同，当然就不能只有一种channel，netty支持的channel种类有：
+```Channel``` 是通信双方进行数据交换的通道，对应于网络模型中的 **传输层**，根据 **交换数据的协议和特性** 不同，当然就不能只有一种channel，netty支持的channel种类有：
 
 * UnixChannel（类Unix系统中通过文件描述符进行通信）
 * DatagramChannel（支持UDP/IP协议）
-* AbstractChannel（基本骨架，模板模式）
+* AbstractChannel（基本实现，模板模式）
 * DuplexChannel（双通道channel，input和output可单独关闭）
 * UdtChannel（支持UDT协议）
 * Http2StreamChannel（支持HTTP2协议）
@@ -146,13 +156,19 @@ Unsafe
 
 #### AbstractChannel
 
-```Channel``` 实际上是一个聚合了好几个关键组件的类型，netty中的网络I/O核心操作都是围绕 ```Channel``` 来进行的。
+```AbstractChannel``` 是 Channel的默认实现，同时也是一个模板类，体现了Netty对Channel的具体实现上的设计，AbstractChannel包含了整个处理流程的几个关键对象，```unsafe```、```pipeline```、```eventLoop```，所以```AbstractChannel``` 就相当于一个请求处理过程的上下文了。
 
 <img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/image-20200325150113811.png" alt="image-20200325150113811" style="zoom:55%;" />
 
-而 ```Channel``` 的核心操作在模板类 ```AbstractChannel``` 中都是直接交给 pipeline 来操作的，如下
+AbstractChannel调用自己的方法时，实际上是交给了Pipeline来处理
+
+![Channel$Unsafe.register](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/Channel$Unsafe.register.png)
+
+实际调用代码就像下面这样的：
 
 ```java
+// AbstractChannel
+
 @Override
 public ChannelFuture bind(SocketAddress localAddress) {
     // 直接交给pipeline来做
@@ -215,7 +231,7 @@ TCP/IP 协议两种核心的channel，分别是 ```SocketChannel``` 和 ```Serve
 
 ### Channel.Unsafe
 
-
+真正干实事儿的人，
 
 #### register
 
@@ -554,7 +570,7 @@ private void doBind0(SocketAddress localAddress) throws Exception {
 
 #### disconnect
 
-客户端取消连接，看下AbstractChannel.AbstractUnsafe.disconnect()方法
+客户端取消连接，看下 ```AbstractChannel.AbstractUnsafe.disconnect()``` 方法
 
 ```java
 @Override
@@ -688,69 +704,255 @@ public final void write(Object msg, ChannelPromise promise) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 ### ChannelPipeline
 
-既然前面带了个```Channel```，那必定和前面的Channel是有关系的，```ChannelPipeline``` 在功能上是一个事件处理组件，专门用来处理 Channel上发生的网络事件（```OP_ACCEPT```, ```OP_CONNECT```, ```OP_WRITE```, ```OP_READ```），比较特别的是，```ChannelPipeline```内部是一个链表结构，链表中每个节点都是一个处理器，一个事件可以被多个处理器处理，只要这些处理器对该事件感兴趣。这也是netty应用中，可以添加自定义事件处理器的地方。
-
-<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/image-20200326172705486.png" alt="image-20200326172705486" style="zoom:50%;float:left" />
+作为Channel的执行团队的ChannelPipeline，接管了所有我们原本直接调用Channel执行的操作，除了这个特点之外，它还有着另一个重要的特点：它是像过滤器一样按照链式方式处理的，默认实现为 ```DefaultPipeline```，下面关于ChannelPipeline的内容都是基于 DefaultPipeline 对象。
 
 
 
-那什么时候会用到 ```ChannelPipeline``` 来处理呢❓既然ChannelPipeline是处理Channel上发生的事件的，那触发Channel事件的地方，就是要和Pipeline打交道的地方，上面说的 OP_ACCEPT、OP_CONNECT等等事件，在Netty框架当中，Pipeline关心的事件不只有这几种，具体说，以下事件都是Pipeline中可以传播的事件：
+#### 内部结构
 
-* ```ChannelRegistered```
-* ```ChannelUnregistered```
-* ```ChannelActive```
-* ```ChannelInactive```
-* ```ExceptionCaught```
-* ```UserEventTriggered```
-* ```ChannelRead```
-* ```ChannelReadComplete```
-* ```ChannelWritabilityChanged```
+```DefaultPipeline``` 内部包含着一个 ```AbstractChannelHandlerContext``` 节点组成的双向链表，Channel相关的操作事件就在链表里从一个节点 “流向” 另一个节点，但并不是一个节点就一定会流向它的next节点，因为节点中的ChannelHandler是有类型的，一个含有InboundChannelHandler的节点只能流向下一个<span style="color:red">（next 方向）</span>含有InboundChannelHandler的节点，同理，OutboundChannelHandler也是一样，下图中 tail 节点包含着一个 OutboundChannelHandler，它的下一个节点<span style="color:red">（pre 方向）</span>并不是和它临近的节点，而是一个包含outboundHander的节点，还有一个就是 inbound 事件流和 outbound 事件流的方向是不一样的，inbound 事件流从 head 向 tail，outbound事件流从 tail 向 head。
+
+![Channel$Unsafe.register1](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/Channel$Unsafe.register1.png)
 
 
 
-这些事件都是Pipeline被动触发的，得有一个线程去实际上fire这些事件
+事件处理流程如下：
+
+```c
+                                               I/O Request
+                                          via Channel or
+                                      ChannelHandlerContext
+                                                    |
++---------------------------------------------------+---------------+
+|                           ChannelPipeline         |               |
+|                                                  \|/              |
+|    +----------------------------------------------+----------+    |
+|    |                   ChannelHandler  N                     |    |
+|    +----------+-----------------------------------+----------+    |
+|              /|\                                  |               |
+|               |                                  \|/              |
+|    +----------+-----------------------------------+----------+    |
+|    |                   ChannelHandler N-1                    |    |
+|    +----------+-----------------------------------+----------+    |
+|              /|\                                  .               |
+|               .                                   .               |
+| ChannelHandlerContext.fireIN_EVT() ChannelHandlerContext.OUT_EVT()|
+|          [method call]                      [method call]         |
+|               .                                   .               |
+|               .                                  \|/              |
+|    +----------+-----------------------------------+----------+    |
+|    |                   ChannelHandler  2                     |    |
+|    +----------+-----------------------------------+----------+    |
+|              /|\                                  |               |
+|               |                                  \|/              |
+|    +----------+-----------------------------------+----------+    |
+|    |                   ChannelHandler  1                     |    |
+|    +----------+-----------------------------------+----------+    |
+|              /|\                                  |               |
++---------------+-----------------------------------+---------------+
+                |                                  \|/
++---------------+-----------------------------------+---------------+
+|               |                                   |               |
+|       [ Socket.read() ]                    [ Socket.write() ]     |
+|                                                                   |
+|  Netty Internal I/O Threads (Transport Implementation)            |
++-------------------------------------------------------------------+
+```
+
+
+
+#### Pipeline Inbound操作
+
+* ```fireChannelRegistered()```
+* ```fireChannelActive()```
+* ```fireChannelRead(Object)```
+* ```fireChannelReadComplete()```
+* ```fireExceptionCaught(Throwable)```
+* ```fireUserEventTriggered(Object)```
+* ```fireChannelWritabilityChanged()```
+* ```fireChannelInactive()```
+* ```fireChannelUnregistered()```
+
+
+
+#### Pipeline Outbound操作
+
+* ```bind(SocketAddress, ChannelPromise)```
+* ```connect(SocketAddress, SocketAddress, ChannelPromise)```
+* ```write(Object, ChannelPromise)```
+* ```flush()```
+* ```read()```
+* ```disconnect(ChannelPromise)```
+* ```close(ChannelPromise)```
+* ```deregister(ChannelPromise)```
+
+
+
+#### HeadContext
+
+```HeadContext``` 是一个比较特殊的 ```AbstractChannelHandlerContext```，它既是一个 ChannelInboundHandler，又是一个 ChannelOutboundHandler，inbound事件第一个由它来处理，outbound事件由它最后一个处理，如此特殊，必定是被 Pipeline 委以重任。
+
+<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/HeadContext.png" alt="HeadContext" style="zoom:45%;" />
+
+HeadContext主要包含的方法有：
 
 ```java
 @Override
-ChannelPipeline fireChannelRegistered();
-
- @Override
-ChannelPipeline fireChannelUnregistered();
-
-@Override
-ChannelPipeline fireChannelActive();
+public void bind(
+        ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise)
+        throws Exception {
+    unsafe.bind(localAddress, promise);
+}
 
 @Override
-ChannelPipeline fireChannelInactive();
+public void connect(
+        ChannelHandlerContext ctx,
+        SocketAddress remoteAddress, SocketAddress localAddress,
+        ChannelPromise promise) throws Exception {
+    unsafe.connect(remoteAddress, localAddress, promise);
+}
 
 @Override
-ChannelPipeline fireExceptionCaught(Throwable cause);
+public void disconnect(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception {
+    unsafe.disconnect(promise);
+}
 
 @Override
-ChannelPipeline fireUserEventTriggered(Object event);
+public void close(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception {
+    unsafe.close(promise);
+}
 
 @Override
-ChannelPipeline fireChannelRead(Object msg);
+public void deregister(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception {
+    unsafe.deregister(promise);
+}
 
 @Override
-ChannelPipeline fireChannelReadComplete();
+public void read(ChannelHandlerContext ctx) {
+    unsafe.beginRead();
+}
 
 @Override
-ChannelPipeline fireChannelWritabilityChanged();
+public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+    unsafe.write(msg, promise);
+}
+
+@Override
+public void flush(ChannelHandlerContext ctx) throws Exception {
+    unsafe.flush();
+}
+
+@Override
+public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+    ctx.fireExceptionCaught(cause);
+}
+
+@Override
+public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+    invokeHandlerAddedIfNeeded();
+    ctx.fireChannelRegistered();
+}
+
+@Override
+public void channelUnregistered(ChannelHandlerContext ctx) throws Exception {
+    ctx.fireChannelUnregistered();
+
+    // Remove all handlers sequentially if channel is closed and unregistered.
+    if (!channel.isOpen()) {
+        destroy();
+    }
+}
+
+@Override
+public void channelActive(ChannelHandlerContext ctx) throws Exception {
+    ctx.fireChannelActive();
+
+    readIfIsAutoRead();
+}
+
+@Override
+public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    ctx.fireChannelInactive();
+}
+
+@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    ctx.fireChannelRead(msg);
+}
+
+@Override
+public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+    ctx.fireChannelReadComplete();
+
+    readIfIsAutoRead();
+}
+
+private void readIfIsAutoRead() {
+    if (channel.config().isAutoRead()) {
+        channel.read();
+    }
+}
+
+@Override
+public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+    ctx.fireUserEventTriggered(evt);
+}
+
+@Override
+public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+    ctx.fireChannelWritabilityChanged();
+}
+```
+
+
+
+#### TailContext
+
+类似于一个收尾的 ChannelInboundHandler ，如果一个事件传播到了 tail ，中间没有一个 ChannelInboundHandler 来处理事件的话，tail 可以把这个消息对象释放掉，或者做一些扫尾工作。
+
+<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/TailContext.png" alt="TailContext" style="zoom:45%;" />
+
+
+
+TailContext重要方法：
+
+```java
+@Override
+public void channelActive(ChannelHandlerContext ctx) throws Exception {
+    onUnhandledInboundChannelActive();
+}
+
+@Override
+public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    onUnhandledInboundChannelInactive();
+}
+
+@Override
+public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+    onUnhandledChannelWritabilityChanged();
+}
+
+@Override
+public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+    onUnhandledInboundUserEventTriggered(evt);
+}
+
+@Override
+public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+    onUnhandledInboundException(cause);
+}
+
+@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    onUnhandledInboundMessage(msg);
+}
+
+@Override
+public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+    onUnhandledInboundChannelReadComplete();
+}
 ```
 
 
@@ -808,9 +1010,11 @@ public final ChannelPipeline addXXX(EventExecutorGroup group, String name, Chann
 
 
 
-Channel一旦注册到EventLoop上，就会通过调用 ```invokeHandlerAddedIfNeeded()``` 方法来通知Pipeline
+Channel一旦注册到EventLoop上，就会通过调用 ```pipeline.invokeHandlerAddedIfNeeded()``` 方法来通知Pipeline
 
 ```java
+// DefaultPipeline
+
 final void invokeHandlerAddedIfNeeded() {
     assert channel.eventLoop().inEventLoop();
     if (firstRegistration) {
@@ -849,7 +1053,7 @@ private void callHandlerAddedForAllHandlers() {
 
 
 
-###ChannelHandler
+###ChannelHandlerContext
 
 ChannelHandler是事件处理器，用于接收Pipeline中传播的事件并处理，但ChannelHandler并不是直接包含于Pipeline中，而是封装成ChannelHandlerContext对象，多个ChannelHandlerContext组成一个双向链表包含于Pipeline中。
 
@@ -857,7 +1061,11 @@ ChannelHandler是事件处理器，用于接收Pipeline中传播的事件并处�
 
 ####生命周期
 
-<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/temp.png" alt="temp" style="zoom:50%;" />
+<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/temp.png" alt="temp" style="zoom:50%;" />
+
+
+
+### ChannelHandler
 
 
 
@@ -865,7 +1073,7 @@ ChannelHandler是事件处理器，用于接收Pipeline中传播的事件并处�
 
 #### ChannelInitializer
 
-
+ChannelInitializer是我们在创建Bootsrap或者ServerBootstrap经常用到的一个ChannelHandler
 
 ```java
 // 服务器端
@@ -895,13 +1103,13 @@ bootstrap.group(group)
 
 
 
-在服务器端和客户端经常会用到的这个类是一个ChannelHandler
-
 <img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/ChannelInitializer.png" alt="ChannelInitializer" style="zoom:40%;float:left" />
 
-那它肯定在一个时机会被添加到Pipeline当中，重要的 ```initChannel``` 方法实际上是发生了两种事件的时候会被调用，一个是 ```handlerAdded``` ，另一个是 ```channelRegistered``` ，但是
+ChannelInitializer是一个ChannelHandler，那它肯定在一个时机会被添加到Pipeline当中，一旦被添加到了Pipeline中，就会触发ChannelHandler的 handlerAdded 事件，而重要的 ```initChannel``` 方法实际上是发生了两种事件的时候会被调用，一个是 ```handlerAdded``` ，另一个是 ```channelRegistered``` ，
 
 ```java
+// ChannelInitializer
+
 private boolean initChannel(ChannelHandlerContext ctx) throws Exception {
     if (initMap.putIfAbsent(ctx, Boolean.TRUE) == null) { // Guard against re-entrance.
         try {
@@ -953,10 +1161,6 @@ public final void channelRegistered(ChannelHandlerContext ctx) throws Exception 
 
 
 
-
-
-
-
 ### EventLoop
 
 EventLoop的基本继承类图如下，常用的EventLoop都是继承自 ```SingleThreadEventLoop``` ，
@@ -965,7 +1169,7 @@ EventLoop的基本继承类图如下，常用的EventLoop都是继承自 ```Sing
 
 
 
-EventLoop实际上是一个 **“多面手”**，它主要有两种职能，一个是使用Reacotr模型监听注册在其上的socket的事件，并处理；另外一个是task执行器，它可以执行提交给它的可运行的任务。从 ```SingleThreadEventLoop``` 继承关系上来看，它的这个单线程，不只做一种事。
+EventLoop实际上是一个 **“多面手”**，它主要有两种职能，一个是使用Reacotr模型监听注册在其上的socket的事件，并处理；另外一个是task执行器，它可以执行提交给它的可运行的任务，可以是普通任务，也可以是定时任务。从 ```SingleThreadEventLoop``` 继承关系上来看，它的这个单线程，不只做一种事。
 
 <img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/image-20200326112352762.png" alt="image-20200326112352762" style="zoom:50%;" />
 
@@ -974,10 +1178,6 @@ EventLoop实际上是一个 **“多面手”**，它主要有两种职能，一
 #### NioEventLoop
 
 ```NioEventLoop``` 当中的 ```run``` 方法是NioEventLoop的核心方法
-
-
-
-
 
 
 
@@ -1000,6 +1200,30 @@ EventLoop实际上是一个 **“多面手”**，它主要有两种职能，一
 需要把ServerSocketChannel注册到NioEventLoop的Selector上，在NioEventLoop过程中，会不断地使用Selector获取到当前它所监视的socket有没有事件，如果出现事件，则调用指定SocketChannel中ChannelPipeline的事件触发方法，
 
 <img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/image-20200325010553258.png" alt="image-20200325010553258" style="zoom:50%;" />
+
+
+
+
+
+### ChannelFuture
+
+
+
+
+
+#### ChannelPromise
+
+
+
+
+
+
+
+### ByteBuf
+
+
+
+
 
 
 
@@ -1224,44 +1448,7 @@ ChannelFuture write(Object msg, ChannelPromise promise);
 
 
 ```shell
-                                               I/O Request
-                                          via Channel or
-                                      ChannelHandlerContext
-                                                    |
-+---------------------------------------------------+---------------+
-|                           ChannelPipeline         |               |
-|                                                  \|/              |
-|    +----------------------------------------------+----------+    |
-|    |                   ChannelHandler  N                     |    |
-|    +----------+-----------------------------------+----------+    |
-|              /|\                                  |               |
-|               |                                  \|/              |
-|    +----------+-----------------------------------+----------+    |
-|    |                   ChannelHandler N-1                    |    |
-|    +----------+-----------------------------------+----------+    |
-|              /|\                                  .               |
-|               .                                   .               |
-| ChannelHandlerContext.fireIN_EVT() ChannelHandlerContext.OUT_EVT()|
-|          [method call]                      [method call]         |
-|               .                                   .               |
-|               .                                  \|/              |
-|    +----------+-----------------------------------+----------+    |
-|    |                   ChannelHandler  2                     |    |
-|    +----------+-----------------------------------+----------+    |
-|              /|\                                  |               |
-|               |                                  \|/              |
-|    +----------+-----------------------------------+----------+    |
-|    |                   ChannelHandler  1                     |    |
-|    +----------+-----------------------------------+----------+    |
-|              /|\                                  |               |
-+---------------+-----------------------------------+---------------+
-                |                                  \|/
-+---------------+-----------------------------------+---------------+
-|               |                                   |               |
-|       [ Socket.read() ]                    [ Socket.write() ]     |
-|                                                                   |
-|  Netty Internal I/O Threads (Transport Implementation)            |
-+-------------------------------------------------------------------+
+
 ```
 
 
