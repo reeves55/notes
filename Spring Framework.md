@@ -529,10 +529,15 @@ ConfigurationClassPostProcessor 是一个 BeanDefinitionRegistryPostProcessor，
 
 
 
-
-
 ```java
 // postProcessBeanDefinitionRegistry
+
+static {
+	candidateIndicators.add(Component.class.getName());
+	candidateIndicators.add(ComponentScan.class.getName());
+	candidateIndicators.add(Import.class.getName());
+	candidateIndicators.add(ImportResource.class.getName());
+}
 
 public void processConfigBeanDefinitions(BeanDefinitionRegistry registry) {
 		List<BeanDefinitionHolder> configCandidates = new ArrayList<>();
@@ -545,6 +550,11 @@ public void processConfigBeanDefinitions(BeanDefinitionRegistry registry) {
 					logger.debug("Bean definition has already been processed as a configuration class: " + beanDef);
 				}
 			}
+      // 哪些BeanDefinition可以作为配置解析的BeanDefinition呢，有下面4种
+      // Component
+      // ComponentScan
+      // Import
+      // ImportResource
 			else if (ConfigurationClassUtils.checkConfigurationClassCandidate(beanDef, this.metadataReaderFactory)) {
 				configCandidates.add(new BeanDefinitionHolder(beanDef, beanName));
 			}
@@ -587,7 +597,8 @@ public void processConfigBeanDefinitions(BeanDefinitionRegistry registry) {
 
 		Set<BeanDefinitionHolder> candidates = new LinkedHashSet<>(configCandidates);
 		Set<ConfigurationClass> alreadyParsed = new HashSet<>(configCandidates.size());
-		do {
+		// 开始从含有配置信息的 BeanDefinition 解析配置
+  	do {
 			parser.parse(candidates);
 			parser.validate();
 
@@ -637,10 +648,6 @@ public void processConfigBeanDefinitions(BeanDefinitionRegistry registry) {
 		}
 	}
 ```
-
-
-
-
 
 
 
