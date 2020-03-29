@@ -51,7 +51,7 @@ netty的三层网络架构，包括：
 
 
 
-<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/7687046-44a838e8aed36503.jpg" alt="7687046-44a838e8aed36503" style="zoom:100%; float:left" />
+<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/7687046-44a838e8aed36503.jpg" alt="7687046-44a838e8aed36503" style="zoom:100%; " />
 
 
 
@@ -1220,10 +1220,6 @@ EventLoop实际上是一个 **“多面手”**，它主要有两种职能，一
 
 
 ### ByteBuf
-
-
-
-
 
 
 
