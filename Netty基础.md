@@ -235,7 +235,7 @@ TCP/IP 协议两种核心的channel，分别是 ```SocketChannel``` 和 ```Serve
 
 #### register
 
-把Channel注册到EventLoopGroup上面，主要操作是由 ```AbstractChannel.AbstractUnsafe``` 来完成的
+把Channel注册到EventLoopGroup上面，主要操作是由 ```AbstractChannel.AbstractUnsafe``` 来完成的，调用的链路如下图：
 
 ![Channel$Unsafe.register](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/Channel$Unsafe.register.png)
 
@@ -1207,7 +1207,7 @@ EventLoop实际上是一个 **“多面手”**，它主要有两种职能，一
 
 ### ChannelFuture
 
-
+这是Netty当中异步操作的核心接口，
 
 
 
