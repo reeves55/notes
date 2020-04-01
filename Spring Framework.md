@@ -920,13 +920,23 @@ public static void registerBeanPostProcessors(
 
 
 
-##### createBean
+![Spring bean实例化流程 (https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/Spring bean实例化流程 (1).png)](/Users/reeves/Downloads/Spring bean实例化流程 (1).png)
+
+
+
+##### createBean 🌟
+
+这是核心方法，
 
 
 
 
 
 #### 12. finishRefresh
+
+
+
+
 
 
 
