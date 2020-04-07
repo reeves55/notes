@@ -1,4 +1,197 @@
-# Spring Core Documention
+# Spring Core Documention(核心概念)
+
+
+
+## 0. 整体介绍
+
+### 核心
+
+spring它是一个bean容器，它包含着很多bean definition，并根据这些bean definition实例化出bean，这就是一个spring应用大厦的图纸。我们如何构建出这个大厦的图纸呢，在spring中，就是根据配置信息，生成bean definition，并注册到容器中，所以解析配置，获取bean definition就是第一个核心。
+
+![springframework](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/springframework.png)
+
+
+
+### 主要角色
+
+
+
+基于注解的ApplicationContext，在解析配置，**获取bean definition阶段**，主要涉及到的角色有：
+
+1. ```@注解```：解析注解就像是按图索骥，解析的目的是为了得到哪里有bean的定义，基于注解的ApplicationContext中支持多种注解，用来指定从哪里获取bean definition；
+2. ```Environment```：它包含了Application运行时的外部环境变量，主要包括两种信息，一种是当前使用的profile，一种是配置properties，包括.properties文件中定义的环境变量、JVM环境变量、系统环境变量等等；
+3. ```DefaultListableBeanFactory```：bean factory，里面包含了所有的bean definition，把bean definiton注册到容器，实际上就是放到这里
+4. 
+
+
+
+
+
+基于注解的ApplicationContext，在根据 bean definition **实例化bean阶段**，主要涉及到的角色有：
+
+1. 
+
+
+
+#### Environment
+
+
+
+
+
+#### AbstractBeanDefinition
+
+主要属性：
+
+* stale
+* beanClass
+* constructorArgumentValues
+* propertyValues
+* role
+* source
+* resource
+* scope
+* abstractFlag
+* isFactoryBean
+* factoryBeanName
+* factoryMethodName
+* attributes：类型 Map<String, Object> 
+* methodOverrides
+* ```lazyInit```：bean是否需要lazy init，默认为false，如果为true，则不会在框架启动时就实例化出相应的bean，等到需要该bean的时候才会实例化出bean
+* autowireMode
+* dependencyCheck
+* dependsOn
+* autowireCandidate
+* primary
+* qualifiers
+* instanceSupplier
+* nonPublicAccessAllowed
+* lenientConstructorResolution
+* initMethodName
+* enforceInitMethod
+* destroyMethodName
+* enforceDestroyMethod
+* synthetic
+
+
+
+##### AnnotatedGenericBeanDefinition
+
+* beanClass
+* metadata
+* instanceSupplier
+* scope
+* primary
+* lazyInit
+* qualifiers
+* 
+
+
+
+##### RootBeanDefinition
+
+* 继承自AbstractBeanDefinition属性
+* decoratedDefinition
+* qualifiedElement
+* allowCaching
+* isFactoryMethodUnique
+* targetType
+* factoryMethodToIntrospect
+
+
+
+
+
+#### DefaultListableBeanFactory
+
+主要属性：
+
+* serializationId
+* parentBeanFactory
+
+* beanDefinitionMap
+* beanDefinitionNames
+* mergedBeanDefinitions：类型为 Map<String, RootBeanDefinition>，bean name -> RootBeanDefinition
+* frozenBeanDefinitionNames
+* beanClassLoader
+* beanExpressionResolver
+* propertyEditorRegistrars
+* beanFactoryPostProcessors
+* beanPostProcessors
+* hasInstantiationAwareBeanPostProcessors
+* hasDestructionAwareBeanPostProcessors
+* ignoredDependencyInterfaces
+* resolvableDependencies
+* tempClassLoader
+* singletonObjects
+* manualSingletonNames
+* singletonFactories
+* earlySingletonObjects
+* registeredSingletons
+* allBeanNamesByType
+* singletonBeanNamesByType
+* configurationFrozen
+* dependencyComparator
+* autowireCandidateResolver
+* 
+
+
+
+#### AnnotationConfigApplicationContext
+
+主要属性：
+
+* reader
+* scanner
+
+* beanFactory
+* environment
+* startupShutdownMonitor
+* startupDate
+* closed
+* active
+* applicationListeners
+* earlyApplicationListeners
+* 
+
+
+
+#### AnnotatedBeanDefinitionReader
+
+主要属性：
+
+* registry：ApplicationContext实例
+* conditionEvaluator
+* scopeMetadataResolver
+* beanNameGenerator
+* 
+
+
+
+#### ClassPathBeanDefinitionScanner
+
+主要属性：
+
+* registry：ApplicationContext实例
+* includeFilters
+* environment
+* conditionEvaluator
+* resourcePatternResolver
+* metadataReaderFactory
+* componentsIndex
+* 
+
+
+
+
+
+* 
+
+
+
+
+
+
 
 
 
@@ -26,7 +219,7 @@ Configuration Metadata指的就是 bean 的定义，配置信息包括了 bean �
 
 
 
-#####XML-based
+#####①. XML-based
 
 基于XML配置的方式，所有的配置都写在XML文件中，可以有多个XML文件，XML文件当中可以定义的东西有很多，因为Spring它引入了可拓展性的XML，可以通过以下这种方法添加多个namespace，然后可以用 <namespace:tag />的方式使用外部引入的标签，举个🌰：
 
@@ -98,6 +291,24 @@ http://www.springframework.org/schema/util http://www.springframework.org/schema
     <replaced-method name="getBean1" replacer="com.xiaolee.Bean1Replacer"></replaced-method>
 </bean>
 ```
+
+
+
+##### ②. Annotation-based
+
+
+
+支持的注解有：
+
+* @Required
+* @Autowired
+* JSR 330注解：@Inject、
+
+
+
+
+
+##### ③. Java-based
 
 
 
@@ -227,4 +438,28 @@ protected String determineAutowireCandidate(Map<String, Object> candidates, Depe
 	return null;
 }
 ```
+
+
+
+
+
+### 1.6 Customizing the Nature of a Bean
+
+这里的自定义bean的性质，是通过spring framework留给开发者的一些可用接口，来实现开发者对bean的一些修改或者配置
+
+#### 1.6.1. Lifecycle Callbacks(生命周期回调)
+
+##### Initialization Callbacks
+
+有好几种方式实现初始化回调：
+
+* 实现 InitializingBean 接口，实现 afterPropertiesSet() 方法
+* 使用 @PostConstruct 注解某个方法
+* xml文件在<bean>标签中设置 "init-method"
+
+这个方法是在bean所有属性都设置完成之后才会调用
+
+
+
+##### Destruction Callbacks
 
