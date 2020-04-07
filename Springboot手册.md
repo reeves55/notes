@@ -127,13 +127,13 @@ public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
 
 两步走，第一、找到配置beandefinition；第二、解析配置信息；
 
-首先，如何判断一个beandefinition含有配置信息？ConfigurationClassPostProcessor 把含有配置信息的beandefinition分为两种，一种是 fullConfigurationCandidate（含有 ```@Configuration``` 注解），一种是 liteConfigurationCandidate（含有 ```@Component```、```@ComponentScan```、```@Import```、```@ImportResource``` 等注解，或者含有```@Bean注解的方法``` ）。
+**首先**，如何判断一个beandefinition含有配置信息？ConfigurationClassPostProcessor 把含有配置信息的beandefinition分为两种，一种是 fullConfigurationCandidate（含有 ```@Configuration``` 注解），一种是 liteConfigurationCandidate（含有 ```@Component```、```@ComponentScan```、```@Import```、```@ImportResource``` 等注解，或者含有```@Bean注解的方法``` ）。
 
 ⚠️ 注意：这里面判断类是否含有这些注解，都是递归查找的，比如一个类包含@SpringBootApplication注解，没有直接包含@Configuration注解，但是@SpringBootApplication注解中包含了@Configuration注解，这也算的。
 
 
 
-再者，如何解析一个含有配置信息的beandefinition，就要用到 ConfigurationClassParser 这个解析器，既然是配置信息是通过注解来表示的，那解析配置类肯定就意味着解析配置类中使用的配置相关的注解，ConfigurationClassParser 解析的注解有：
+**再者**，如何解析一个含有配置信息的beandefinition，就要用到 ConfigurationClassParser 这个解析器，既然是配置信息是通过注解来表示的，那解析配置类肯定就意味着解析配置类中使用的配置相关的注解，ConfigurationClassParser 解析的注解有：
 
 * ```@PropertySource```
 * ```@ComponentScan```
@@ -163,9 +163,69 @@ public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
 
 这个注解的作用和 xml中的<include/>标签很像，就是导入新的配置类，可以导入的配置类可以有三种类型，处理时会先生成@Import指定的配置类对象，类似getConstroctor().newInstance()这种类型的，
 
-1. ```ImportSelector.class```：这是一个import选择器，顾名思义，也就是由这个类来决定import哪些配置类，具体处理时会调用ImportSelector对象的 selectImports 方法，返回实际上要加载的配置类名称，然后对这些实际要加载的配置类进行@Import操作，有点递归的意思。
+1. ```ImportSelector.class```：这是一个import选择器，顾名思义，也就是由这个类来决定import哪些配置类，具体处理时会调用ImportSelector对象的 selectImports 方法，返回实际上要加载的配置类名称，然后对这些实际要加载的配置类进行@Import处理，有点递归的意思，如果@Import导入的配置类是一个DeferredImportSelector.class类型，那就不马上处理，等到这一轮所有扫描到的配置类都解析完成之后再处理，处理时，调用DeferredImportSelector.getImportGroup()方法，拿到一个Group对象，然后 调用 Group.process(...)方法之后，再调用Group.selectImports()方法返回要导入的配置类，最后对每个需要导入的配置类进行@Import操作。
 2. ```ImportBeanDefinitionRegistrar.class```：把 ImportBeanDefinitionRegistrar 对象放到配置类的 Map<ImportBeanDefinitionRegistrar, AnnotationMetadata> importBeanDefinitionRegistrars 属性中去，每个配置类解析完成之后，都会把调用 importBeanDefinitionRegistrars 中的 registerBeanDefinitions 方法，向 BeanFacotry 注册 BeanDefinition。
 3. 其他：就当做 @Configuration 注解的类来处理，流程和处理起始配置类相同。
+
+
+
+#####@EnableAutoConfiguration
+
+拿常用的@EnableAutoConfiguration注解来说，它就有一个@Import注解
+
+```java
+@Import(AutoConfigurationImportSelector.class)
+```
+
+AutoConfigurationImportSelector类是一个DeferredImportSelector，因此这个@Import是在一般的@Import处理之后。AutoConfigurationImportSelector的getImportGroup()方法返回了一个内部类AutoConfigurationGroup，这样处理就有点曲线救国的感觉了，内部的AutoConfigurationGroup.process(...)方法实际上调用了外部类的selectImports()方法，并把返回值保存起来，然后调用AutoConfigurationGroup.selectImports()方法，这就等于是调用外部的AutoConfigurationImportSelector的selectImports()方法。
+
+AutoConfigurationImportSelector的selectImports()方法做了一件非常重要的事情，如下：
+
+```java
+/**
+ * AutoConfigurationImportSelector.class
+ */
+public String[] selectImports(AnnotationMetadata annotationMetadata) {
+	if (!isEnabled(annotationMetadata)) {
+		return NO_IMPORTS;
+	}
+  // ① 这一步实际上是调用 loadMetadata(classLoader, PATH)，其中的PATH就是
+  // META-INF/spring-autoconfigure-metadata.properties，这个文件是spring自己用的文件
+  // 包含了一些预定义的 autoconfigure 类
+	AutoConfigurationMetadata autoConfigurationMetadata = AutoConfigurationMetadataLoader
+			.loadMetadata(this.beanClassLoader);
+	AnnotationAttributes attributes = getAttributes(annotationMetadata);
+  
+  // ② 从classpath.*:/META-INFO/spring.factories文件中获取 EnableAutoConfiguration 配置类
+	List<String> configurations = getCandidateConfigurations(annotationMetadata,
+			attributes);
+	configurations = removeDuplicates(configurations);
+	Set<String> exclusions = getExclusions(annotationMetadata, attributes);
+	checkExcludedClasses(configurations, exclusions);
+	configurations.removeAll(exclusions);
+  
+  // ③ 对结果进行过滤，主要针对configurations每一项，在autoConfigurationMetadata中，如果存在 
+  // xxxConig.ConditionalOnClass 这样的配置，就去检查这个配置指定的class是否存在，如果不存在
+  // 就把configurations这一项过滤掉
+	configurations = filter(configurations, autoConfigurationMetadata);
+	fireAutoConfigurationImportEvents(configurations, exclusions);
+  
+  // ④ 把需要解析的配置类返回，等待解析
+	return StringUtils.toStringArray(configurations);
+}
+
+protected List<String> getCandidateConfigurations(AnnotationMetadata metadata,
+		AnnotationAttributes attributes) {
+  // 只从spring.factories文件中加载 EnableAutoConfiguration 的配置
+  // getSpringFactoriesLoaderFactoryClass(): EnableAutoConfiguration.class
+	List<String> configurations = SpringFactoriesLoader.loadFactoryNames(
+			getSpringFactoriesLoaderFactoryClass(), getBeanClassLoader());
+	Assert.notEmpty(configurations,
+			"No auto configuration classes found in META-INF/spring.factories. If you "
+					+ "are using a custom packaging, make sure that file is correct.");
+	return configurations;
+}
+```
 
 
 
@@ -178,3 +238,47 @@ public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
 ####@Bean Method处理
 
 这个注解就是在配置类中的方法上面加@Bean注解，把方法返回的类封装成Bean注册到BeanFactory，ConfigurationClassPostProcessor在处理的时候，会把所有@Bean注解的方法添加到配置类的 Set<BeanMethod> beanMethods 属性中去，然后配置类解析完毕的时候，会从 beanMethods 中根据bean method构建出BeanDefinition添加到BeanFactory中去。
+
+
+
+
+
+## SpringFramework拓展点
+
+[官网](https://docs.spring.io/spring/docs/5.2.5.RELEASE/spring-framework-reference/core.html#beans-factory-extension) 给出说明，SpringFramework的拓展点有三个：
+
+* BeanFactoryPostProcessor（自定义beans的配置）
+
+* BeanPostProcessor（自定义Bean定义）
+* FactoryBean（自定义bean实例化逻辑）
+
+
+
+
+
+
+
+## SpringBoot整合第三方框架
+
+第三方框架整合进SpringBoot，其实主要就是把自己的一些spring拓展点处理器添加到spring容器当中，然后随着spring框架的生命周期，在某个时间点被调用，完成相应的逻辑。
+
+第一个问题，如何将第三方框架定义的一些处理bean添加到spring bean factory中❓
+
+有几种方式：
+
+1. 当框架本身不需要用户自定义配置，框架自动配置完之后就可以发挥作用，那么可以采用 spring boot starter 的方式，具体来说就是在框架下添加 spring.factories 文件，并在文件中配置好 org.springframework.boot.autoconfigure.EnableAutoConfiguration 即可，其中原理是配置类上加了@EnableAutoConfiguration注解（org.springframework.boot.autoconfigure.EnableAutoConfiguration），那么这个类使用的 AutoConfigurationImportSelector 会自动从 spring.factories 文件中找到所有的 EnableAutoConfiguration配置值，然后把配置值作为配置类去解析，这样就可以配置好第三方框架，零配置，方便简洁
+2. 当框架本身需要用户进行一些自定义配置，那么可以采用自定义注解，在注解当中支持用户配置一些信息，自定义注解中通过@Import引入自定义的配置类，在配置类当中解析自定义注解中用户配置信息，完成第三方框架的初始化，可以支持比较复杂的框架初始化逻辑
+3. 当框架按照第一种方式实现了，但是需要给用户一个“开关”，让用户开启框架，可以自定义一个 @EnableXXX 的注解，在注解里面通过 @Import 引入一个开关Configuration配置类，这个配置类定义一个开关 @Bean，然后在框架主题的 AutoConfiguration 配置类上面加一个 @ConditionalOnBean("开关Bean")，这样就实现了用 @EnableXXX来控制原本自动开启的第三方框架是否开启
+
+
+
+### tk.mybatis
+
+tk.mybatis采用的是用户可配置的注解（```@MapperScan```）方式，将tk.mybatis整合进spring framework，这个注解会@Import方式引入类 tk.mybatis.spring.annotation.MapperScannerRegistrar.class，这个类实现了 ImportBeanDefinitionRegistrar 接口，因此会调用其 ```registerBeanDefinitions``` 方法，在这个方法里面，tk.mybatis解析用户配置，然后构造出一个scanner，由scanner去扫描用户配置的basePackages下面的所有bean definition，然后对bean definition做处理，包括把bean class更换为 tk.mybatis的factory bean（```MapperFactoryBean```），这样这个bean在实例化的时候，就可以按照tk.mybatis的逻辑，由MapperFactoryBean返回整合了tk.mybatis功能的bean实例。
+
+
+
+其中，上述中的scanner继承了ClassPathBeanDefinitionScanner，这是一个可以自定义扫描规则的 bean definition scanner，只要是符合你定义规则的.class文件都会被构建成BeanDefinition返回给你，不管这个类/接口有没有标注@Component之类的。
+
+
+
