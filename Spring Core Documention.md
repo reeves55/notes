@@ -65,7 +65,7 @@ http://www.springframework.org/schema/util http://www.springframework.org/schema
 * ```autowire```：bean的属性值的自动注入选项，默认为no，即不自动注入bean的属性，这样bean的属性值就不会被自动设置，可选值有4个：no、byName、byType、constructor，分别对应 BeanDefinition <span style="color:red">autowireMode</span> 属性 的4个可能值：AUTOWIRE_NO（0）、AUTOWIRE_BY_NAME（1）、AUTOWIRE_BY_TYPE（2）、AUTOWIRE_CONSTRUCTOR（3），在populateBean阶段，会根据BeanDefinition的autowireMode属性来判断如何注入属性，如果是 AUTOWIRE_BY_NAME 或者 AUTOWIRE_BY_TYPE ，则会调用指定的自动注入方法，解析出属性需要注入的值，在基于注解的ApplicationContext中，一个类当中的某个属性，如果不加@Autowired之类的注解，默认autowire=0，这个属性是不会被自动注入的，这个时候的属性自动注入是@Autowired处理器来做的
 * ```depends-on```：指定当前bean必须在depends-on设置的bean实例化之后，再实例化，也就是规定了指定的这些bean的实例化顺序，同时，bean在destroy过程中，必须要先销毁当前bean，才会销毁depends-on指定的从属bean。如果当前bean执行正常的功能，需要其他bean先做某些操作，但是这两个bean不存在直接的依赖关系，就可以使用depends-on。对应BeanDefinition的 <span style="color:red">String[] dependsOn</span> 属性
 * ```autowire-candidate```：设置当前bean是否能被spring框架自动注入到其他的bean，对应BeanDefinition的 <span style="color:red">autowireCandidate</span> 属性，默认为true，这个属性在 populateBean 阶段执行bean的属性注入时，针对bean的属性会解析其可能的注入candidate，这个时候找到的注入bean，会判断其是否是autowire candidate，判断的依据就是其相应BeanDefinition的populateBean属性是否为true
-* ```primary```：当容器中有多个同一种类型的bean时，其他bean需要注入这种类型的bean就会优先使用primary设置为true的bean，而不会注入其他bean实例，但是如果有多个同种类型的bean都设置了primary为true，自动注入会失败，不知道要注入哪个实例。对应于BeanDefinition中的
+* ```primary```：当容器中有多个同一种类型的bean时，其他bean需要注入这种类型的bean就会优先使用primary设置为true的bean，而不会注入其他bean实例，但是如果有多个同种类型的bean都设置了primary为true，自动注入会失败，不知道要注入哪个实例。对应于BeanDefinition中的 <span style="color:red">boolean primary</span> 属性
 * ```init-method```：
 * ```destroy-method```：
 * ```factory-method```：
@@ -102,108 +102,6 @@ http://www.springframework.org/schema/util http://www.springframework.org/schema
 
 
 
-
-##### getMergedLocalBeanDefinition
-
-XML配置文件解析之后第一步，会生成相应的 ```GenericBeanDefinition``` ，后面会有一个调用，这个操作对所有在```beanDefinitionNames```中的bean进行一个“再解析”的操作，将GenericBeanDefinition解析成RootBeanDefinition并放到 ```Map<String, RootBeanDefinition> mergedBeanDefinitions``` 里面去，如果有些bean定义了parent属性，在这个过程当中，会将这个bean和parent bean进行合并，变成一个完整的子bean，如果没有定义parent属性，则只是简简单单做一个deep copy，new一个新的RootBeanDefinition。
-
-
-
-```java
-RootBeanDefinition mbd = getMergedLocalBeanDefinition(beanName);
-```
-
-
-
-子bean合并父bean的操作实际上就是用子BeanDefinition部分属性的值去覆盖父BeanDefinition属性的值，不覆盖的属性值就是继承下来了，具体方法调用如下：
-
-```java
-/**
- * AbstractBeanDefinition
- */
-protected RootBeanDefinition getMergedBeanDefinition(
-			String beanName, BeanDefinition bd, @Nullable BeanDefinition containingBd)
-			throws BeanDefinitionStoreException {
-  	// 省略了很多代码...
-  
-  	// Deep copy with overridden values.
-  	// 直接用父BeanDefinition作为模板，生成RootBeanDefinition对象
-		mbd = new RootBeanDefinition(pbd);
-  	// 用子BeanDefinition部分属性覆盖父BeanDefinition的属性值
-		mbd.overrideFrom(bd);
-  
-  	// 省略了很多代码...
-}
-
-
-/**
- * AbstractBeanDefinition
- */
-// other就是子BeanDefinition
-public void overrideFrom(BeanDefinition other) {
-		if (StringUtils.hasLength(other.getBeanClassName())) {
-			setBeanClassName(other.getBeanClassName());
-		}
-		if (StringUtils.hasLength(other.getScope())) {
-			setScope(other.getScope());
-		}
-		setAbstract(other.isAbstract());
-		if (StringUtils.hasLength(other.getFactoryBeanName())) {
-			setFactoryBeanName(other.getFactoryBeanName());
-		}
-		if (StringUtils.hasLength(other.getFactoryMethodName())) {
-			setFactoryMethodName(other.getFactoryMethodName());
-		}
-		setRole(other.getRole());
-		setSource(other.getSource());
-		copyAttributesFrom(other);
-
-		if (other instanceof AbstractBeanDefinition) {
-			AbstractBeanDefinition otherAbd = (AbstractBeanDefinition) other;
-			if (otherAbd.hasBeanClass()) {
-				setBeanClass(otherAbd.getBeanClass());
-			}
-			if (otherAbd.hasConstructorArgumentValues()) {
-				getConstructorArgumentValues().addArgumentValues(other.getConstructorArgumentValues());
-			}
-			if (otherAbd.hasPropertyValues()) {
-				getPropertyValues().addPropertyValues(other.getPropertyValues());
-			}
-			if (otherAbd.hasMethodOverrides()) {
-				getMethodOverrides().addOverrides(otherAbd.getMethodOverrides());
-			}
-			Boolean lazyInit = otherAbd.getLazyInit();
-			if (lazyInit != null) {
-				setLazyInit(lazyInit);
-			}
-			setAutowireMode(otherAbd.getAutowireMode());
-			setDependencyCheck(otherAbd.getDependencyCheck());
-			setDependsOn(otherAbd.getDependsOn());
-			setAutowireCandidate(otherAbd.isAutowireCandidate());
-			setPrimary(otherAbd.isPrimary());
-			copyQualifiersFrom(otherAbd);
-			setInstanceSupplier(otherAbd.getInstanceSupplier());
-			setNonPublicAccessAllowed(otherAbd.isNonPublicAccessAllowed());
-			setLenientConstructorResolution(otherAbd.isLenientConstructorResolution());
-			if (otherAbd.getInitMethodName() != null) {
-				setInitMethodName(otherAbd.getInitMethodName());
-				setEnforceInitMethod(otherAbd.isEnforceInitMethod());
-			}
-			if (otherAbd.getDestroyMethodName() != null) {
-				setDestroyMethodName(otherAbd.getDestroyMethodName());
-				setEnforceDestroyMethod(otherAbd.isEnforceDestroyMethod());
-			}
-			setSynthetic(otherAbd.isSynthetic());
-			setResource(otherAbd.getResource());
-		}
-		else {
-			getConstructorArgumentValues().addArgumentValues(other.getConstructorArgumentValues());
-			getPropertyValues().addPropertyValues(other.getPropertyValues());
-			setLazyInit(other.isLazyInit());
-			setResourceDescription(other.getResourceDescription());
-		}
-	}
-```
 
 
 
