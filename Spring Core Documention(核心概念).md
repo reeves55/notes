@@ -19,9 +19,15 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 基于注解的ApplicationContext，在解析配置，**获取bean definition阶段**，主要涉及到的角色有：
 
 1. ```@注解```：解析注解就像是按图索骥，解析的目的是为了得到哪里有bean的定义，基于注解的ApplicationContext中支持多种注解，用来指定从哪里获取bean definition；
-2. ```Environment```：它包含了Application运行时的外部环境变量，主要包括两种信息，一种是当前使用的profile，一种是配置properties，包括.properties文件中定义的环境变量、JVM环境变量、系统环境变量等等；
-3. ```DefaultListableBeanFactory```：bean factory，里面包含了所有的bean definition，把bean definiton注册到容器，实际上就是放到这里
-4. 
+2. ```BeanDefinition```：根据BeanDefinition，经历了一系列的步骤，最终可以构建出实际上需要的bean实例，```①``` 创建bean对象 -> ```②``` 给bean对象执行属性注入
+3. ```BeanPostProcessor```：
+4. ```Environment```：它包含了Application运行时的外部环境变量，主要包括两种信息，一种是当前激活的profile名称，一种是配置properties，包括.properties文件中定义的环境变量、JVM环境变量、系统环境变量等等；
+5. ```ApplicationListener```：注册到 ApplicationContext 上的事件监听器，监听 ApplicationContext 发布的事件，包括：
+6. ```ApplicationEventMulticaster```：ApplicationContext 中的事件发布器，负责发布事件，调用 ApplicationListener 的事件监听回调方法，执行listener回调方法的时候，如果有线程池，优先使用线程池执行回调任务，如果没有线程池，则在主线程中完成回调
+7. ```ApplicationContext```：
+8. ```DefaultListableBeanFactory```：bean factory，里面包含了所有的bean definition，把bean definiton注册到容器，实际上就是放到这里，bean factory在spring框架启动过程经过了几个主要的周期，包括：```①``` 新建并初始化 -> ```② ```prepare -> ```③ ```执行自定义后置处理 -> ```④ ```执行所有的 BeanFactoryPostProcessor 后置处理器逻辑 ->``` ⑤``` 实例化 bean factory 管理的所有bean实例
+9. ```BeanFactoryPostProcessor```：
+10. ```BeanDefinitionRegistryPostProcessor```：是 BeanFactoryPostProcessor 的一种，但是
 
 
 
@@ -33,7 +39,59 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 
 
 
+
+
+
+
+
+
+
+
 #### Environment
+
+主要属性：
+
+
+
+
+
+
+
+#### ApplicationListener
+
+主要接口方法：
+
+* ```void onApplicationEvent(E event)```：E extends ApplicationEvent
+
+
+
+
+
+#### ApplicationEventMulticaster
+
+ApplicationContext的事件发布器，负责发布特定事件给匹配的 ApplicationListener，并执行listener的onApplicationEvent方法
+
+主要接口方法：
+
+* ```void addApplicationListener(ApplicationListener<?> listener)```
+* ```void addApplicationListenerBean(String listenerBeanName)```
+* ```void removeApplicationListener(ApplicationListener<?> listener)```
+* ```void removeApplicationListenerBean(String listenerBeanName)```
+* ```void removeAllListeners()```
+* ```void multicastEvent(ApplicationEvent event)```
+* ```void multicastEvent(ApplicationEvent event, @Nullable ResolvableType eventType)```
+
+
+
+
+
+#### SmartInitializingSingleton
+
+主要接口方法：
+
+* ```void afterSingletonsInstantiated()```：单例bean在实例化之后，执行的回调方法，注意，只有bean的scope是singleton才行，而且 lazyinit不能为true，因为这个回调只在spring启动的时候执行
+
+
 
 
 
@@ -43,47 +101,54 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 
 主要属性：
 
-* stale
-* beanClass
-* constructorArgumentValues
-* propertyValues
-* role
-* source
-* resource
-* scope
-* abstractFlag
-* isFactoryBean
-* factoryBeanName
-* factoryMethodName
-* attributes：类型 Map<String, Object> 
-* methodOverrides
+* ```stale```
+* ```beanClass```
+* ```propertyValues```
+* ```role```
+* ```source```
+* ```resource```
+* ```scope```：bean definition定义中scope有两种取值，singleton / prototype，在实例化bean阶段，如果检测到 bean definition此属性的值为 singleton 的话，实例化bean之后，放入bean factory中的 singletonObjects 中，如果是 prototype 的话，则不会执行放入 singletonObjects 的操作，而是直接实例化出bean实例
+* ```abstractFlag```
+* ```isFactoryBean```
+* ```factoryBeanName```
+* ```isFactoryMethodUnique```：
+* ```factoryMethodToIntrospect```：缺省的工厂方法，这个和 resolvedConstructorOrFactoryMethod 属性实际上是同步的，都是可以直接调用的方法对象
+* ```factoryMethodName```：创建bean对象的时候，如果此属性不为空，则选择实例化bean方式为 调用工厂方法。在检测一个factory class中究竟哪个方法是工厂方法时，会比较factory class中的每个方法名和此属性，方法名相同才能算作 candidate工厂方法，⚠️ 注意：一旦一个bean设置成使用工厂方法生成bean对象，那么bean的class属性就没有意义了，工厂方法返回什么类型，这个bean对象就是什么类型
+* ```constructorArgumentLock```：锁
+* ```resolvedConstructorOrFactoryMethod```：Method类型，如果bean对象是使用工厂方法来创建的，第一次创建时，通过查找找到了符合要求的工厂方法，这个属性将会存储这个找到的工厂方法，下次再实例化bean对象时候（prototype bean），就不需要再去找工厂方法了，singleton 类型的bean再次获取时，就直接从 bean factory singletonObjects 里面拿了，和工厂方法没关系
+* ```constructorArgumentsResolved```：boolean类型，标识工厂方法参数是否已经解析完成过
+* ```constructorArgumentValues```：在 bean定义的时候指定了bean factory method方法参数的值，在xml配置文件中，就是配置bean的 <constructor-arg /> 标签值，此属性保存了这些值，但是这里的方法参数可能还需要解析，如果通过 contructor-arg 标签设置 ref="xxxBean"，这个参数的值不是对应的bean实例，而只是包含了bean name的一些信息，所以这个参数在实际使用之前，需要经过解析
+* ```resolvedConstructorArguments```：已经解析完成的工厂方法参数，可以直接传给工厂方法作为参数，让工厂返回相应的bean实例
+* ```preparedConstructorArguments```：还没有被解析的工厂方法参数，比如一个工厂方法参数是一个bean，那这个属性就只存储了bean的name之类的信息，没有存储bean实例，这就叫还没解析
+* ```attributes```：类型 Map<String, Object> 
+* ```methodOverrides```
 * ```lazyInit```：bean是否需要lazy init，默认为false，如果为true，则不会在框架启动时就实例化出相应的bean，等到需要该bean的时候才会实例化出bean
-* autowireMode
-* dependencyCheck
-* dependsOn
-* autowireCandidate
-* primary
-* qualifiers
-* instanceSupplier
-* nonPublicAccessAllowed
-* lenientConstructorResolution
-* initMethodName
-* enforceInitMethod
-* destroyMethodName
-* enforceDestroyMethod
-* synthetic
+* ```autowireMode```：自动注入模式，当一个bean使用工厂方法创建bean对象时，如果工厂方法需要传入参数，那就要看这个bean的autowireMode的值了，只有当bean是通过constructor方式自动注入时，工厂方法创建bean对象时，对于工厂方法参数，没有设置方法参数值时，会自动传入一个参数值，不会报错，但是如果autowireMode是其他值的话，则工厂方法需要什么参数，bean definition就要配置每个参数的值，如果没有配置，在使用工厂方法创建bean对象的时候会报错
+* ```dependencyCheck```
+* ```dependsOn```：和 xml 配置中的 depends-on 效果一样，当前bean必须在 dependsOn指定的bean实例化之后再实例化，在bean factory实例化bean阶段，如果检测到了某个 bean definition的这个属性不为空，则把bean之间的依赖关系保存到 bean factory 的 dependentBeanMap 和 dependenciesForBeanMap 属性中，然后实例化每一个 depend bean
+* ```autowireCandidate```
+* ```primary```
+* ```qualifiers```
+* ```instanceSupplier```
+* ```nonPublicAccessAllowed```
+* ```lenientConstructorResolution```
+* ```initMethodName```
+* ```enforceInitMethod```
+* ```destroyMethodName```
+* ```enforceDestroyMethod```
+* ```synthetic```
 
 
 
 ##### AnnotatedGenericBeanDefinition
 
-* beanClass
-* metadata
-* instanceSupplier
-* scope
-* primary
-* lazyInit
-* qualifiers
+* ```beanClass```
+* ```metadata```
+* ```instanceSupplier```
+* ```scope```
+* ```primary```
+* ```lazyInit```
+* ```qualifiers```
 * 
 
 
@@ -91,12 +156,38 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 ##### RootBeanDefinition
 
 * 继承自AbstractBeanDefinition属性
-* decoratedDefinition
-* qualifiedElement
-* allowCaching
-* isFactoryMethodUnique
-* targetType
-* factoryMethodToIntrospect
+* ```decoratedDefinition```
+* ```qualifiedElement```
+* ```allowCaching```
+* ```isFactoryMethodUnique```
+* ```targetType```
+* ```factoryMethodToIntrospect```
+
+
+
+#### FactoryBean
+
+主要接口方法：
+
+* ```T getObject() throws Exception```：获取FactoryBean生成的bean实例
+* ```Class<?> getObjectType()```：返回FactoryBean对应生成的Bean实例类型，每种FactoryBean返回值都不相同，没有统一的属性值存储这个 object type
+* ```default boolean isSingleton() { return true;}```：FactoryBean生成的bean实例是否是单例bean，默认为true
+
+
+
+
+
+#### BeanDefinitionRegistry
+
+主要接口方法：
+
+* ```void registerBeanDefinition(String beanName, BeanDefinition beanDefinition) ```
+* ```void removeBeanDefinition(String beanName)```
+* ```BeanDefinition getBeanDefinition(String beanName)```
+* ```boolean containsBeanDefinition(String beanName)```
+* ```String[] getBeanDefinitionNames()```
+* ```int getBeanDefinitionCount()```
+* ```boolean isBeanNameInUse(String beanName)```：bean factory中是否已经注册或者用到这个bean name指定的bean
 
 
 
@@ -106,34 +197,38 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 
 主要属性：
 
-* serializationId
-* parentBeanFactory
-
-* beanDefinitionMap
-* beanDefinitionNames
-* mergedBeanDefinitions：类型为 Map<String, RootBeanDefinition>，bean name -> RootBeanDefinition
-* frozenBeanDefinitionNames
-* beanClassLoader
-* beanExpressionResolver
-* propertyEditorRegistrars
-* beanFactoryPostProcessors
-* beanPostProcessors
-* hasInstantiationAwareBeanPostProcessors
-* hasDestructionAwareBeanPostProcessors
-* ignoredDependencyInterfaces
-* resolvableDependencies
-* tempClassLoader
-* singletonObjects
-* manualSingletonNames
-* singletonFactories
-* earlySingletonObjects
-* registeredSingletons
-* allBeanNamesByType
-* singletonBeanNamesByType
-* configurationFrozen
-* dependencyComparator
-* autowireCandidateResolver
-* 
+* ```serializationId```
+* ```parentBeanFactory```
+* ```beanDefinitionMap```
+* ```beanDefinitionNames```
+* ```mergedBeanDefinitions```：类型为 Map<String, RootBeanDefinition>，bean name -> RootBeanDefinition
+* ```configurationFrozen```：当 bean factory实例化所有单例bean之前，会把这个值设置为true，意味着 bean factory管理的bean definition不会再被修改，也不会再被 bean post processor处理，这个时候，对bean definition相关数据进行缓存才是安全的，比如这个时候就可以缓存符合某种类型的所有bean名称，这样就不需要遍历bean definition map了，但是如果这个时候 bean definition可以被修改，那缓存结果可能和实际对应不上，就没有缓存的意义
+* ```frozenBeanDefinitionNames```：类型String[]，当 bean factory实例化所有单例bean之前，会把这个值设置成当时 beanDefinitionNames 的 String[] 格式的值
+* ```beanClassLoader```
+* ```beanExpressionResolver```
+* ```propertyEditorRegistrars```
+* ```beanFactoryPostProcessors```
+* ```beanPostProcessors```
+* ```hasInstantiationAwareBeanPostProcessors```
+* ```hasDestructionAwareBeanPostProcessors```
+* ```ignoredDependencyInterfaces```
+* ```resolvableDependencies```
+* ```tempClassLoader```
+* ```singletonObjects```：存放所有单例bean实例，包括 singleton factory bean，
+* ```factoryBeanInstanceCache```：factory bean实例缓存，
+* ```factoryBeanObjectCache```：如果 bean factory 是单例bean并且已经实例化过了，在获取，如果实例化之后的bean是一个 factory bean，那首先会在这个属性中寻找到factory bean对应的bean实例，如果没有找到，则
+* ```manualSingletonNames```
+* ```singletonFactories```
+* ```earlySingletonObjects```
+* ```prototypesCurrentlyInCreation```：scope为prototype的bean在实例化之前，会把将要实例化bean的bean name 放到这个属性中去，bean实例化之后，不管是否实例化成功，都会把 bean name 从这个属性中移除
+* ```registeredSingletons```
+* ```allBeanNamesByType```
+* ```singletonBeanNamesByType```
+* ```dependencyComparator```
+* ```autowireCandidateResolver```
+* embeddedValueResolvers
+* ```dependentBeanMap```：
+* ```dependenciesForBeanMap```：
 
 
 
@@ -141,17 +236,17 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 
 主要属性：
 
-* reader
-* scanner
+* ```reader```
+* ```scanner```
 
-* beanFactory
-* environment
-* startupShutdownMonitor
-* startupDate
-* closed
-* active
-* applicationListeners
-* earlyApplicationListeners
+* ```beanFactory```
+* ```environment```
+* ```startupShutdownMonitor```
+* ```startupDate```
+* ```closed```
+* ```active```
+* ```applicationListeners```
+* ```earlyApplicationListeners```
 * 
 
 
@@ -160,10 +255,10 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 
 主要属性：
 
-* registry：ApplicationContext实例
-* conditionEvaluator
-* scopeMetadataResolver
-* beanNameGenerator
+* ```registry```：ApplicationContext实例
+* ```conditionEvaluator```
+* ```scopeMetadataResolver```
+* ```beanNameGenerator```
 * 
 
 
@@ -172,20 +267,16 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 
 主要属性：
 
-* registry：ApplicationContext实例
-* includeFilters
-* environment
-* conditionEvaluator
-* resourcePatternResolver
-* metadataReaderFactory
-* componentsIndex
+* ```registry```：ApplicationContext实例
+* ```includeFilters```
+* ```environment```
+* ```conditionEvaluator```
+* ```resourcePatternResolver```
+* ```metadataReaderFactory```
+* ```componentsIndex```
 * 
 
 
-
-
-
-* 
 
 
 
