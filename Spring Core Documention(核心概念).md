@@ -16,6 +16,12 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 
 
 
+![SpringFramework启动过程](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/SpringFramework启动过程.png)
+
+
+
+
+
 基于注解的ApplicationContext，在解析配置，**获取bean definition阶段**，主要涉及到的角色有：
 
 1. ```@注解```：解析注解就像是按图索骥，解析的目的是为了得到哪里有bean的定义，基于注解的ApplicationContext中支持多种注解，用来指定从哪里获取bean definition；
@@ -27,7 +33,20 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 7. ```ApplicationContext```：
 8. ```DefaultListableBeanFactory```：bean factory，里面包含了所有的bean definition，把bean definiton注册到容器，实际上就是放到这里，bean factory在spring框架启动过程经过了几个主要的周期，包括：```①``` 新建并初始化 -> ```② ```prepare -> ```③ ```执行自定义后置处理 -> ```④ ```执行所有的 BeanFactoryPostProcessor 后置处理器逻辑 ->``` ⑤``` 实例化 bean factory 管理的所有bean实例
 9. ```BeanFactoryPostProcessor```：
-10. ```BeanDefinitionRegistryPostProcessor```：是 BeanFactoryPostProcessor 的一种，但是
+10. ```InstantiationAwareBeanPostProcessor```：
+11. ```BeanDefinitionRegistryPostProcessor```：是 BeanFactoryPostProcessor 的一种，但是在执行流程中，它会比所有的BeanFactoryPostProcessor早执行，并且首先执行
+
+
+
+
+
+
+
+Bean的实例化过程
+
+
+
+
 
 
 
