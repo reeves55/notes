@@ -10,13 +10,43 @@ spring它是一个bean容器，它包含着很多bean definition，并根据这�
 
 ![springframework](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/springframework.png)
 
+### 主要流程
+
+
+
+#### ApplicationContext.refresh 模板方法
+
+每一种ApplicationContext，都会在完成一些自定义设置之后，进入到 AbstractApplicationContext 的 refresh() 方法执行流程中，这是一个模板方法，定义了游戏流程，每一种特定的ApplicationContext只能在游戏规则里，设计本身的实例化机制。ClassPathXmlApplicationContext 就在 obtainFreshBeanFactory 阶段实例化了 bean factory对象，并加载了所有的 bean definition，能这样做是因为 ApplicationContext 的 obtainFreshBeanFactory 执行时，留了一个抽象方法 refreshBeanFactory 给子类实现
+
+![ApplicationContext.refresh模板方法](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/ApplicationContext.refresh模板方法.png)
+
+
+
+
+
+#### AnnotationConfigApplicationContext
+
+
+
+![SpringFramework启动过程1](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/SpringFramework启动过程1.png)
+
+
+
+#### 实例化  Bean
+
+
+
+
+
+
+
+
+
+
+
 
 
 ### 主要角色
-
-
-
-![SpringFramework启动过程](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/SpringFramework启动过程.png)
 
 
 
@@ -316,6 +346,8 @@ ApplicationContext的事件发布器，负责发布特定事件给匹配的 Appl
 
 
 <img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/image-20200403141745413.png" alt="image-20200403141745413" style="zoom:80%;float:left" />
+
+
 
 
 

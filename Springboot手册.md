@@ -241,6 +241,60 @@ protected List<String> getCandidateConfigurations(AnnotationMetadata metadata,
 
 
 
+## @EnableAutoConfiguration
+
+这个注解是spring boot自动配置的 “导火索”，或者是 “启动按钮”，和 ```spring.factories``` 合在一起，完成 auto configuration功能。也就是说，如果你依赖了 spring starter 这种类型的依赖，如果想让引入的依赖完成自动配置，则需要在启动配置类或者其他能扫描到的配置类上面加 @EnableAutoConfiguration，
+
+
+
+
+
+
+
+
+
+
+
+对注解配置类进行解析时，配置类可能含有的注解有：@Component、@ComponentScan、@Import、@ImportResource，
+
+**@ComponentScan注解处理**：在扫描@ComponentScan指定的base packages当中的类时候，会对每个类进行检测，判断这个类是否可以被解析成bean definition，交由spring来管理，判断的条件就是 这个类被 ```@Component``` 注解或者 ```@ManagedBean``` 注解
+
+**@Import注解处理**：@Import可以导入三种导入类类型，
+
+
+
+
+
+注解配置类解析是由 ConfigurationClassParser 来解析的，
+
+
+
+1. 从初始的 bean definition map 中找到配置类candidates，如果配置类有直接声明了 @Configuration 注解或者注解的元注解中包含 @Configuration 的，则就是配置类
+
+```java
+// 下面这些，@Target、@Retention等等 都是元注解
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Inherited
+@AutoConfigurationPackage
+@Import(AutoConfigurationImportSelector.class)
+// 这是注解定义
+public @interface EnableAutoConfiguration {
+  //....
+}
+```
+
+
+
+2. 如果没有直接声明的 @Configuration 注解，那就判断有没有候选的注解，包括 @Component、@ComponentScan、@Import、@ImportResource，如果有直接声明这几种注解或者元注解中包含这些注解，那么这个类就可以被作为候选配置类
+
+
+
+
+
+
+
 
 
 ## SpringFramework拓展点
