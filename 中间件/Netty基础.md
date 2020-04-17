@@ -67,7 +67,9 @@ netty的三层网络架构，包括：
 
 <a href="">Pipeline</a> ：
 
-<a href="">ChannelHandler</a> ：
+<a href="#">ChannelHandlerContext</a> ：
+
+<a href="#">ChannelHandler</a> ：
 
 <a href="">EventLoopGroup & EventLoop</a> ：
 
@@ -1033,7 +1035,7 @@ public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
 
 
 
-#### addXXX
+#### Add ChannelHandler
 
 包括 addFirst、addLast、addBefore、addAfter 这几个方法，本质上都是一样的，只不过向ChannelHandlerContext链表插入元素的位置不同而已，步骤如下：
 
@@ -1086,7 +1088,7 @@ public final ChannelPipeline addXXX(EventExecutorGroup group, String name, Chann
 
 
 
-Channel一旦注册到EventLoop上，就会通过调用 ```pipeline.invokeHandlerAddedIfNeeded()``` 方法来通知Pipeline
+Channel一旦注册到EventLoop上，就会通过调用 ```pipeline.invokeHandlerAddedIfNeeded()``` 方法来通知Pipeline，Pipeline会触发 HandlerAdded 事件，每一个ChannelHandler对应定义的回调函数都会被调用。
 
 ```java
 // DefaultPipeline
@@ -1127,8 +1129,6 @@ private void callHandlerAddedForAllHandlers() {
 
 
 
-
-
 ### ChannelInboundInvoker & ChannelOutboundInvoker
 
 这两个接口的含义都是 ```事件触发器``` ，实现了 ChannelInboundInvoker 接口的类，就可以 ```触发输入型事件```，实现了 ChannelOutboundInvoker 接口的类，就可以```触发输出型事件```。
@@ -1143,16 +1143,6 @@ private void callHandlerAddedForAllHandlers() {
 
 
 
-#### Inbound事件两种处理流程
-
-
-
-![image-20200416175906227](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/image-20200416175906227.png)
-
-
-
-
-
 和 ChannelInboundInvoker 相比，ChannelOutboundInvoker 的子接口多了一个 Channel，这也是为什么可以使用Channel直接主动发起 write 等操作的原因
 
 
@@ -1161,15 +1151,19 @@ private void callHandlerAddedForAllHandlers() {
 
 
 
+#### Inbound事件两种处理流程
 
 
 
+![image-20200417094919904](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/image-20200417094919904.png)
 
 
 
+#### Outbound事件两种处理流程
 
+outbound事件最终会走到 HeadContext 的 ChannelOutboundHandler，而这个 Handler 调用的是XXXChannel.Unsafe 相应的方法，最终承担起所有的，还是 Unsafe 类
 
-
+![image-20200417094847207](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/image-20200417094847207.png)
 
 
 
@@ -1518,6 +1512,8 @@ ChannelHandler是事件处理器，用于接收Pipeline中传播的事件并处�
 
 ####生命周期
 
+
+
 <img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/temp.png" alt="temp" style="zoom:50%;" />
 
 
@@ -1816,7 +1812,7 @@ private static class SimpleServerHandler extends ChannelInboundHandlerAdapter {
 
 
 
-#### 两个关键的Channel
+#### NIO Socket Channel
 
 客户端 ```NioSocketChannel``` 和服务器端 ```NioServerSocketChannel```
 
