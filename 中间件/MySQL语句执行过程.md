@@ -1,4 +1,4 @@
-# 工作笔记 - 2019/11/04
+# MySQL执行SQL语句过程
 
 MySQL执行SQL语句过程，简单图示如下：
 
@@ -14,7 +14,7 @@ MySQL执行SQL语句过程，简单图示如下：
 
 所以总的来说，想要命中MySQL的查询缓存，条件还是蛮苛刻的。
 
-## 2. 预编译SQL语句
+## 2. 解析SQL语句，生成执行计划
 
 如果查询缓存没有命中，那就走正常的SQL语句执行过程，简单点来说就是：
 
@@ -37,3 +37,18 @@ MySQL执行SQL语句过程，简单图示如下：
 * rows：显示mysql认为执行查询时必须要返回的行数
 * filtered：通过过滤条件之后对比总数的百分比
 * Extra：额外的信息,using file sort,using where
+
+
+
+## 3. 根据执行计划，调用存储引擎
+
+
+
+存储引擎接口：
+
+https://github.com/mysql/mysql-server/blob/7d10c82196c8e45554f27c00681474a9fb86d137/sql/handler.h#L3614
+
+
+
+
+

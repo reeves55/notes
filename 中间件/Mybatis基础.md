@@ -166,7 +166,7 @@ XML自定义别名
 
 ```java
 package com.xiaolee.xxx.xxx.xxx.xxx;
-@Alias()
+@Alias("myClass")
 public class MyClass {
   
 } 
@@ -178,7 +178,46 @@ public class MyClass {
 
 ### typeHandlers & typeHandler
 
-typeHandler可以自定义 jdbcType 、 javaType 转换处理器，
+TypeHandler分为两种：mybatis自带的 和 我们自定义的
+
+
+
+功能：可以对sql执行参数进行 java type -> jdbc type类型转换，也可以对sql执行结果进行 jdbc type -> java type转换。
+
+<img src="https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/tuchuang/image-20200418115211914.png" alt="image-20200418115211914" style="zoom:50%;" />
+
+
+
+配置：要想使用自定义的 typehandler，需要正确配置
+
+```xml
+<!-- ① 首先要在配置文件中注册自定义的TypeHandler -->
+<typeHandlers>
+	<typeHandler jdbcType="VARCHAR" javaType="string" handler="com.xiaolee.xxx.xxx.MyStringTypeHandler">
+</typeHandlers>
+  
+  
+  <mapper namespace="com.xiaolee.xxx.xxx.XXMapper">
+    <resultMap type="xx" id="id_xx">
+      <!-- ②-①指定结果集某一列属性的javaType和jdbcType，这样就可以匹配typeHandler -->
+    	<result column="col_1" property="col1" javaType="string" jdbcType="VARCHAR" />
+      
+      <!-- ②-②直接设置结果集某一列属性的 typeHandler -->
+      <result column="col_2" property="col2" typeHandler="com.xiaolee.xxx.xxx.MyStringTypeHandler">
+    </resultMap>
+    
+    <>
+    <select id="findXXX" parameterType="string" resultMap="id_xxx">
+      select * from xx where col_1 = #{ col1 typeHandler=com.xiaolee.xxx.xxx.MyStringTypeHandler}
+    </select>
+  </mapper>
+```
+
+
+
+
+
+
 
 
 
@@ -205,6 +244,77 @@ mybatis使用 ObjectFactory 从数据库返回结果构建出结果POJO对象，
 ## mapper映射器
 
 
+
+
+
+
+
+
+
+## XML解析器
+
+
+
+![mybatis基础](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/mybatis基础.png)
+
+
+
+
+
+
+
+## 反射工具箱
+
+
+
+> Reflector对象 <------> Class反射相关信息
+
+
+
+## 高级主题
+
+
+
+### mybatis集成Spring
+
+mybatis两大核心初始化项目，一个是获取 Configuration，通过Configuration才能构建出 SqlSessionFactory进而创建出SqlSession，另外一个就是获取到 mapper 信息，具体来说就是知道有哪些 mapper接口。
+
+
+
+
+
+
+
+**1. 扫描mapper接口**
+
+通过 @MapperScan 来指定扫描什么包，来扫描出 mapper 接口类
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Documented
+// 核心是引入了 MapperScannerRegistrar
+@Import(MapperScannerRegistrar.class)
+@Repeatable(MapperScans.class)
+public @interface MapperScan {
+}
+```
+
+而 MapperScannerRegistrar 这个 ImportBeanDefinitionRegistrar 只做了一件事情，就是向容器注册```MapperScannerConfigurer``` BeanDefinitionRegistryPostProcessor，MapperScannerConfigurer包含了 @MapperScan 中的所有配置信息，真正的mapper扫描逻辑是在 MapperScannerConfigurer 中开始的。
+
+![image-20200420150907091](https://tuchuang-1256253537.cos.ap-shanghai.myqcloud.com/img/image-20200420150907091.png)
+
+**2. 生成mapper接口对应的 bean definition**
+
+mapper接口对应的 bean definition的 bean class默认是 ```MapperFactoryBean``` ，这是一个工厂类，一个mapper注册到spring容器中的bean definition实际上基本是这样：
+
+
+
+
+
+
+
+**3. 调用 mapper 相应的 getBean 返回代理对象**
 
 
 

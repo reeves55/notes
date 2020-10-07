@@ -127,7 +127,7 @@ public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
 
 两步走，第一、找到配置beandefinition；第二、解析配置信息；
 
-**首先**，如何判断一个beandefinition含有配置信息？ConfigurationClassPostProcessor 把含有配置信息的beandefinition分为两种，一种是 fullConfigurationCandidate（含有 ```@Configuration``` 注解），一种是 liteConfigurationCandidate（含有 ```@Component```、```@ComponentScan```、```@Import```、```@ImportResource``` 等注解，或者含有```@Bean注解的方法``` ）。
+**首先**，如何判断一个beandefinition含有配置信息？ConfigurationClassPostProcessor 把含有配置信息的beandefinition分为两种，一种是 full configuration candidate（含有 ```@Configuration``` 注解，类上直接声明了注解或者递归的查找注解的元注解中包含 @Configuration 注解），一种是 lite configuration candidate（含有 ```@Component```、```@ComponentScan```、```@Import```、```@ImportResource``` 等注解，或者含有```@Bean注解的方法``` ）。
 
 ⚠️ 注意：这里面判断类是否含有这些注解，都是递归查找的，比如一个类包含@SpringBootApplication注解，没有直接包含@Configuration注解，但是@SpringBootApplication注解中包含了@Configuration注解，这也算的。
 
@@ -142,6 +142,14 @@ public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
 * ```@Bean methods```
 
 每种注解包含的配置信息是不同维度的，所以不同注解需要分别处理，
+
+
+
+注解的解析顺序：
+
+
+
+
 
 
 
@@ -164,7 +172,7 @@ public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
 这个注解的作用和 xml中的<include/>标签很像，就是导入新的配置类，可以导入的配置类可以有三种类型，处理时会先生成@Import指定的配置类对象，类似getConstroctor().newInstance()这种类型的，
 
 1. ```ImportSelector.class```：这是一个import选择器，顾名思义，也就是由这个类来决定import哪些配置类，具体处理时会调用ImportSelector对象的 selectImports 方法，返回实际上要加载的配置类名称，然后对这些实际要加载的配置类进行@Import处理，有点递归的意思，如果@Import导入的配置类是一个DeferredImportSelector.class类型，那就不马上处理，等到这一轮所有扫描到的配置类都解析完成之后再处理，处理时，调用DeferredImportSelector.getImportGroup()方法，拿到一个Group对象，然后 调用 Group.process(...)方法之后，再调用Group.selectImports()方法返回要导入的配置类，最后对每个需要导入的配置类进行@Import操作。
-2. ```ImportBeanDefinitionRegistrar.class```：把 ImportBeanDefinitionRegistrar 对象放到配置类的 Map<ImportBeanDefinitionRegistrar, AnnotationMetadata> importBeanDefinitionRegistrars 属性中去，每个配置类解析完成之后，都会把调用 importBeanDefinitionRegistrars 中的 registerBeanDefinitions 方法，向 BeanFacotry 注册 BeanDefinition。
+2. ```ImportBeanDefinitionRegistrar.class```：把 ImportBeanDefinitionRegistrar 对象放到配置类的 Map<ImportBeanDefinitionRegistrar, AnnotationMetadata> importBeanDefinitionRegistrars 属性中去，每个配置类解析完成之后，都会调用 importBeanDefinitionRegistrars 中的 registerBeanDefinitions 方法，向 BeanFacotry 注册 BeanDefinition。
 3. 其他：就当做 @Configuration 注解的类来处理，流程和处理起始配置类相同。
 
 
@@ -241,17 +249,11 @@ protected List<String> getCandidateConfigurations(AnnotationMetadata metadata,
 
 
 
+
+
 ## @EnableAutoConfiguration
 
 这个注解是spring boot自动配置的 “导火索”，或者是 “启动按钮”，和 ```spring.factories``` 合在一起，完成 auto configuration功能。也就是说，如果你依赖了 spring starter 这种类型的依赖，如果想让引入的依赖完成自动配置，则需要在启动配置类或者其他能扫描到的配置类上面加 @EnableAutoConfiguration，
-
-
-
-
-
-
-
-
 
 
 
@@ -260,8 +262,6 @@ protected List<String> getCandidateConfigurations(AnnotationMetadata metadata,
 **@ComponentScan注解处理**：在扫描@ComponentScan指定的base packages当中的类时候，会对每个类进行检测，判断这个类是否可以被解析成bean definition，交由spring来管理，判断的条件就是 这个类被 ```@Component``` 注解或者 ```@ManagedBean``` 注解
 
 **@Import注解处理**：@Import可以导入三种导入类类型，
-
-
 
 
 

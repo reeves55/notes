@@ -396,7 +396,7 @@ http://www.springframework.org/schema/util http://www.springframework.org/schema
 * ```parent```：bean的继承，子bean可以继承父bean的相关属性，在解析带有parent属性的bean标签时，生成相应GenericBeanDefinition对象会设置其 parentName 属性的值，这个值在调用 getMergedLocalBeanDefinition 方法 的时候会判断 parentName 属性的值来决定是否需要merge BeanDefinition，对应BeanDefinition的 <span style="color:red">parentName</span> 属性
 * ```scope```：取值范围为 [singleton | prototype]，对应BeanDefinition的 <span style="color:red">scope</span> 属性
 * ```abstract```：在BeanFactory实例化bean的阶段，会调用 preInstantiateSingletons 方法，abstract类型的bean是不会实例化的，abstract 对应BeanDefinition的 <span style="color:red">abstractFlag</span> 属性
-* ```lazy-init```：如果lazy-init为true，则不会在 preInstantiateSingletons 调用时实例化这些bean，对应BeanDefinition的 <span style="color:red">lazyInit</span> 属性
+* ```lazy-init```：如果lazy-init为true，则不会在 preInstantiateSingletons 调用时实例化这些bean，只在需要这个bean（getBean("xxx")）的时候才会实例化这个bean，对应BeanDefinition的 <span style="color:red">lazyInit</span> 属性
 * ```autowire```：bean的属性值的自动注入选项，默认为no，即不自动注入bean的属性，这样bean的属性值就不会被自动设置，可选值有4个：no、byName、byType、constructor，分别对应 BeanDefinition <span style="color:red">autowireMode</span> 属性 的4个可能值：AUTOWIRE_NO（0）、AUTOWIRE_BY_NAME（1）、AUTOWIRE_BY_TYPE（2）、AUTOWIRE_CONSTRUCTOR（3），在populateBean阶段，会根据BeanDefinition的autowireMode属性来判断如何注入属性，如果是 AUTOWIRE_BY_NAME 或者 AUTOWIRE_BY_TYPE ，则会调用指定的自动注入方法，解析出属性需要注入的值，在基于注解的ApplicationContext中，一个类当中的某个属性，如果不加@Autowired之类的注解，默认autowire=0，这个属性是不会被自动注入的，这个时候的属性自动注入是@Autowired处理器来做的
 * ```depends-on```：指定当前bean必须在depends-on设置的bean实例化之后，再实例化，也就是规定了指定的这些bean的实例化顺序，同时，bean在destroy过程中，必须要先销毁当前bean，才会销毁depends-on指定的从属bean。如果当前bean执行正常的功能，需要其他bean先做某些操作，但是这两个bean不存在直接的依赖关系，就可以使用depends-on。对应BeanDefinition的 <span style="color:red">String[] dependsOn</span> 属性
 * ```autowire-candidate```：设置当前bean是否能被spring框架自动注入到其他的bean，对应BeanDefinition的 <span style="color:red">autowireCandidate</span> 属性，默认为true，这个属性在 populateBean 阶段执行bean的属性注入时，针对bean的属性会解析其可能的注入candidate，这个时候找到的注入bean，会判断其是否是autowire candidate，判断的依据就是其相应BeanDefinition的populateBean属性是否为true
@@ -604,4 +604,7 @@ protected String determineAutowireCandidate(Map<String, Object> candidates, Depe
 
 
 ##### Destruction Callbacks
+
+
+
 
